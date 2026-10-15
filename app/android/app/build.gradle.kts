@@ -107,6 +107,14 @@ android {
                         "**/x86/**",
                         "**/x86_64/**",
                     )
+
+                    // Native libraries are stored uncompressed by default so the
+                    // loader can map them straight out of the APK. libopencv_java4.so
+                    // is the one that makes this worth giving up: it is 23.5 MB
+                    // stored and 9.2 MB deflated, over half the download. The cost
+                    // is that the libraries are extracted to internal storage at
+                    // install, which is why this is set for release only.
+                    useLegacyPackaging = true
                 }
             }
 

@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Required by the release build. Flutter's template declares this only in the
+      debug and profile manifests, so a release APK has no network access at all
+      and every request fails immediately — which is exactly how the update check
+      behaved, reporting "no network" on a working connection.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="二维码"
         android:name="${applicationName}"

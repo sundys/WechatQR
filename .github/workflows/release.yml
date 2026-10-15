@@ -170,16 +170,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          tag="$GITHUB_REF_NAME"
           # A curated summary is used when one has been written for this tag;
-          # otherwise GitHub's generated changelog stands in. The generated list
-          # of commits is not a release note a user can read.
-          notes="../docs/releases/${GITHUB_REF_NAME}.md"
-          if [[ -f "$notes" ]]; then
-            echo "Using the curated notes at $notes"
+          # otherwise GitHub's generated changelog stands in, which is a list
+          # of commits rather than something a user can read.
+          notes="../docs/releases/${tag}.md"
+
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Re-running a tag replaces what is published instead of failing, so
+            # a release can be corrected without inventing a version number. The
+            # asset keeps its name, so --clobber overwrites it in place.
+            echo "Release $tag exists; updating it in place."
+            if [[ -f "$notes" ]]; then
+              gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+            fi
+            gh release upload "$tag" wechatqr-*.apk --repo "$GITHUB_REPOSITORY" --clobber
+          elif [[ -f "$notes" ]]; then
+            echo "Creating $tag with the curated notes at $notes"
             # The .ipa is attached later by the manual "iOS build" workflow.
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$notes" wechatqr-*.apk
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --notes-file "$notes" wechatqr-*.apk
           else
-            echo "No curated notes at $notes; falling back to generated notes."
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes wechatqr-*.apk
+            echo "Creating $tag with generated notes; no curated notes at $notes"
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --generate-notes wechatqr-*.apk
           fi
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'
+
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'
