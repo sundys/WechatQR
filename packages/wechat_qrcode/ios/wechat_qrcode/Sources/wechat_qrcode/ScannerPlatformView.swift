@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import AVFoundation
+import CoreImage
 import Flutter
 import UIKit
 
@@ -43,9 +44,15 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
     private var isRunning = false
     private var runtimeErrorObserver: NSObjectProtocol?
 
-    /** PNG of the most recent frame that produced a result. */
-    @Volatile
+    /// PNG of the most recent frame that produced a result.
+    ///
+    /// Written on the analysis queue and read from the method channel, so both
+    /// accessors take the lock; Swift has no equivalent of Kotlin's `@Volatile`.
     private var lastFramePng: Data?
+
+    /// Reused: constructing a `CIContext` is expensive, and this one is used on
+    /// every frame that decodes something.
+    private lazy var ciContext = CIContext()
 
     /// Set while a result is on screen; frames are ignored rather than analysed.
     /// The camera stays open so the preview does not flicker.
@@ -79,7 +86,11 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
     func view() -> UIView { container }
 
     /// The frame the last result came from, or `nil`.
-    func lastFrame() -> Data? { lastFramePng }
+    func lastFrame() -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return lastFramePng
+    }
 
     // MARK: - Session control
 
@@ -89,11 +100,15 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
     /// permission prompt showed a black preview that only relaunching the app
     /// cleared; a start that quietly does nothing cannot be recovered from, so
     /// this always attempts the start, checks that the session really came up,
-    /// retries once, and reports the failure to Dart if it still has not. A black
+    /// retries, and reports the failure to Dart if it still has not. A black
     /// screen with no explanation is the one outcome that must not happen.
+    ///
+    /// No disposal flag is needed the way the Android view has one: this is a
+    /// `FlutterPlatformView` with no `dispose` callback, and every hop onto the
+    /// session queue captures `self` weakly and re-checks it.
     func start() {
         sessionQueue.async { [weak self] in
-            guard let self, !self.disposed else { return }
+            guard let self else { return }
             if !self.isConfigured {
                 guard self.configureSession() else { return }
             }
@@ -139,7 +154,6 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
         ) { [weak self] _ in
             guard let self else { return }
             self.sessionQueue.async {
-                guard !self.disposed else { return }
                 self.beginRunning(attempt: 1)
             }
         }
@@ -322,7 +336,10 @@ extension ScannerPlatformView: AVCaptureVideoDataOutputSampleBufferDelegate {
                 x = Double(normalised.x)
                 y = Double(normalised.y)
             }
-            return ["text": match.text, "x": x, "y": y]
+            // Annotated rather than inferred: the values are a mix of String and
+            // Double?, which would otherwise land on [String: Any].
+            let entry: [String: Any?] = ["text": match.text, "x": x, "y": y]
+            return entry
         }
 
         storeLastFrame(pixelBuffer)
@@ -372,10 +389,13 @@ extension ScannerPlatformView: AVCaptureVideoDataOutputSampleBufferDelegate {
     /// into its backing store, so rendering it yields a blank image.
     private func storeLastFrame(_ pixelBuffer: CVPixelBuffer) {
         let image = CIImage(cvPixelBuffer: pixelBuffer)
-        guard let cgImage = CIContext().createCGImage(image, from: image.extent) else {
+        guard let cgImage = ciContext.createCGImage(image, from: image.extent) else {
             return
         }
-        lastFramePng = UIImage(cgImage: cgImage).pngData()
+        let png = UIImage(cgImage: cgImage).pngData()
+        lock.lock()
+        lastFramePng = png
+        lock.unlock()
     }
 }
 

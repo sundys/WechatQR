@@ -58,6 +58,18 @@ history keeps them all. A picture from the gallery has no markers and falls back
 read. The release step now uses `docs/releases/<tag>.md` when that file exists and falls back to the
 generated list when it does not.
 
+## A mistake worth naming
+
+The first version of the iOS frame capture did not compile: it used `@Volatile` on a property, which
+is Kotlin, and checked a `disposed` flag, which the Android view has and the Swift one does not.
+Both came from editing the two platform views in the same sitting and carrying the Kotlin shape
+across. Swift expresses the first with a lock — taken in both accessors of `lastFramePng` — and has
+no need for the second at all: this is a `FlutterPlatformView` with no `dispose` callback, and every
+hop onto the session queue already captures `self` weakly.
+
+The same round also assumed `UIKit` would make `CIImage` visible. It now imports `CoreImage`
+explicitly rather than relying on transitive visibility.
+
 ## Not verified
 
 * Nothing here was exercised on a device. Freezing, marker placement on both platforms, and the
