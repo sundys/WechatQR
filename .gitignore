@@ -30,7 +30,11 @@ packages/**/.packages
 **/ios/Flutter/Flutter.podspec
 **/ios/Flutter/Generated.xcconfig
 **/ios/Flutter/flutter_export_environment.sh
-**/ios/Runner.xcworkspace/
+# Runner.xcworkspace itself is committed: Flutter's tooling - both the CocoaPods
+# and the Swift Package Manager integration - locates the project through it and
+# fails with "Xcode workspace not found" without it. Only the per-user state
+# inside it is ignored.
+**/ios/Runner.xcworkspace/xcuserdata/
 **/ios/Runner.xcodeproj/xcuserdata/
 **/ios/Runner.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcframework/
