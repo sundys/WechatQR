@@ -22,7 +22,6 @@ This work was carried out on Windows. There is no macOS, no Xcode and no iOS dev
 | OpenCV C++ wrapper | `.../WeChatQRCodeEngine.mm` + `include/WeChatQRCodeEngine.h` |
 | Model assets | `.../Resources/models/` (MD5-verified, same files as Android) |
 | CocoaPods wiring | `ios/wechat_qrcode.podspec` |
-| Swift Package wiring | `ios/wechat_qrcode/Package.swift` |
 | Privacy manifest | `.../PrivacyInfo.xcprivacy` |
 | Platform capabilities | `packages/platform_services/ios/.../PlatformServicesPlugin.swift` |
 | Permission strings | `app/ios/Runner/Info.plist` |
@@ -47,15 +46,43 @@ is platform-conditional except the update row.
 * `installApk`, `canInstallPackages` and the install-permission screen return `unsupported`; the
   version row opens the Releases page instead (§3.2).
 
+## CocoaPods, not Swift Package Manager
+
+This plugin is integrated with **CocoaPods**. Its `Package.swift` was deleted after Swift Package
+Manager rejected the plugin outright:
+
+```
+target at '.../Sources/wechat_qrcode' contains mixed language source files; feature not supported
+```
+
+The plugin has to contain both Swift (the channels and the camera view) and Objective-C++ (the
+wrapper around OpenCV's C++ API, which Swift cannot call). SPM does not allow those in a single
+target, and it cannot build a C++ target and a Swift target from the same directory tree either
+without splitting them into separate targets with their own headers and dependencies.
+
+Splitting the sources was considered and not done: it would move every file, rewrite the package
+manifest and the podspec around it, and add untested structure for a dependency manager this project
+does not need. Flutter only uses SPM for a plugin **when a `Package.swift` exists**
+(`supportSwiftPackageManagerForPlatform` in `plugins.dart`), so deleting the manifest makes Flutter
+fall back to the podspec, which was written for CocoaPods from the start and handles mixed-language
+pods routinely. `platform_services` keeps its `Package.swift` — it is Swift-only and builds fine.
+
+Nothing else changed as a result: `wechat_qrcode.podspec` already listed the `.swift` and `.mm`
+sources, declared the ObjC header as public so Swift can see it, and pointed at the vendored
+framework.
+
 ## Where the OpenCV framework has to live
 
 Inside the Swift package: `packages/wechat_qrcode/ios/wechat_qrcode/opencv2.xcframework`.
 
-Flutter builds plugins with **Swift Package Manager** when they ship a `Package.swift`, and SPM
-resolves `.binaryTarget(path:)` relative to that file, refusing anything outside the package
-directory. The framework was initially placed next to the podspec
-(`packages/wechat_qrcode/ios/opencv2.xcframework`), which is where CocoaPods looks — so SPM resolved
-the path, found no artifact, and failed the build with:
+It sat next to the podspec (`packages/wechat_qrcode/ios/opencv2.xcframework`), which is where
+CocoaPods looks, and it now lives inside the Swift package directory instead because the podspec was
+repointed there. It is not moved back: the location is arbitrary now that CocoaPods is the only
+consumer, and moving it would invalidate the cached twenty-minute OpenCV build for no gain.
+
+The path came from an earlier attempt to use SPM, which resolves `.binaryTarget(path:)` relative to
+`Package.swift` and refuses anything outside the package directory. That attempt failed the build
+with:
 
 ```
 local binary target 'opencv2' at .../Packages/.packages/wechat_qrcode/opencv2.xcframework
