@@ -165,15 +165,18 @@ jobs:
 
       - name: Attach the .ipa to a release
         if: inputs.attach_to_release != ''
-        working-directory: app
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag='${{ inputs.attach_to_release }}'
-          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null \
-            || { echo "::error::No release named '$tag' exists. Push the matching tag first, or leave attach_to_release empty to build without publishing."; exit 1; }
-          gh release upload "$tag" wechatqr-*.ipa \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+
+          # Absolute path, and deliberately no `working-directory`: the .ipa is
+          # written to the workspace root, so a relative glob here would resolve
+          # against app/ and match nothing. The tag, and the existence of the
+          # release, were already checked in the version job.
+          ipa=$(ls "$GITHUB_WORKSPACE"/wechatqr-*.ipa)
+          echo "Attaching $ipa to $tag"
+
+          gh release upload "$tag" "$ipa" --repo "$GITHUB_REPOSITORY" --clobber
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'
