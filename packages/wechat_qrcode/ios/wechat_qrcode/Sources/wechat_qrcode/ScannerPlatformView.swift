@@ -230,9 +230,12 @@ extension ScannerPlatformView: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-        // The Objective-C selector is `detectAndDecodePixelBuffer:rotationDegrees:`,
-        // so the first argument carries no label of its own.
-        let decoded = WeChatQRCodeEngine.detectAndDecodePixelBuffer(
+        // Objective-C declares this as
+        // `detectAndDecodePixelBuffer:rotationDegrees:`, but Swift drops
+        // "PixelBuffer" — it repeats the first parameter's type — leaving
+        // `detectAndDecode(_:rotationDegrees:)`, with the first argument
+        // unlabelled.
+        let decoded = WeChatQRCodeEngine.detectAndDecode(
             pixelBuffer,
             rotationDegrees: Int32(rotationDegrees(for: connection)))
 

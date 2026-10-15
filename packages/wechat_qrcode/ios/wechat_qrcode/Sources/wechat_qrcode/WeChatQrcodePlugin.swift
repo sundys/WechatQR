@@ -116,8 +116,8 @@ public class WeChatQrcodePlugin: NSObject, FlutterPlugin {
         }
 
         workQueue.async {
-            // A trailing NSError** parameter becomes a thrown error in Swift, so
-            // the Objective-C method is called with `try` and no `error:` argument.
+            // This method returns a BOOL success flag, so Swift rewrites its
+            // trailing NSError ** into a thrown error and `error:` is not passed.
             do {
                 try WeChatQRCodeEngine.initialize(withModelDirectory: directory)
                 DispatchQueue.main.async { result(nil) }
@@ -141,14 +141,20 @@ public class WeChatQrcodePlugin: NSObject, FlutterPlugin {
         }
 
         workQueue.async {
-            do {
-                let texts = try WeChatQRCodeEngine.detectAndDecodeImage(atPath: path)
-                DispatchQueue.main.async { result(texts) }
-            } catch {
-                DispatchQueue.main.async {
+            // Unlike the initialiser above, this one keeps its `error:` argument:
+            // Swift only rewrites a trailing NSError ** into a thrown error when
+            // the method returns a success flag, and this one returns the decoded
+            // strings instead.
+            var error: NSError?
+            let texts = WeChatQRCodeEngine.detectAndDecodeImage(
+                atPath: path, error: &error)
+            DispatchQueue.main.async {
+                if let error {
                     result(FlutterError(
                         code: "invalidImage",
                         message: error.localizedDescription, details: nil))
+                } else {
+                    result(texts)
                 }
             }
         }

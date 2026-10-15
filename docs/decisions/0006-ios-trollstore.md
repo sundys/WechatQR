@@ -155,11 +155,17 @@ Nothing below has been checked:
      `layerWidthSizable` / `layerHeightSizable`. The preview layer is now the backing layer of a
      `UIView` subclass (`layerClass` override), which is the documented way to host it and needs no
      layout code at all;
-   * a trailing `NSError **` parameter is imported by Swift as `throws`, so `initialize(withModelDirectory:error:)`
-     and `detectAndDecodeImage(atPath:error:)` take no `error:` argument and are called with `try`;
-   * `releaseEngine` is imported as `release()` — Swift prunes the trailing component that repeats
-     the class name;
-   * `detectAndDecodePixelBuffer:rotationDegrees:` takes its first argument unlabelled;
+   * `releaseEngine` is imported as `release()` — Swift prunes a trailing component that repeats the
+     class name;
+   * `detectAndDecodePixelBuffer:rotationDegrees:` is imported as
+     `detectAndDecode(_:rotationDegrees:)`. Swift prunes `PixelBuffer` as well, because it repeats
+     the first parameter's *type*, and the first argument therefore carries no label;
+   * the two trailing `NSError **` parameters were **not** treated alike, which the first round of
+     fixes got wrong by assuming otherwise. `initializeWithModelDirectory:error:` returns a `BOOL`
+     success flag, so Swift rewrites it to `initialize(withModelDirectory:) throws` and no `error:`
+     is passed. `detectAndDecodeImageAtPath:error:` returns the decoded strings rather than a flag,
+     so it keeps its `error:` argument and is called with `&error` and no `try`. Only the compiler
+     could settle that; the source of the two Objective-C declarations looks identical;
    * `handle(_:result:)` must be `public` to satisfy the public `FlutterPlugin` protocol;
    * `Bundle(url:)` takes a non-optional `URL`, so the resource bundle lookup needed unwrapping.
 
