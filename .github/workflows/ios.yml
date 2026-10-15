@@ -67,13 +67,13 @@ jobs:
 
       # Building OpenCV for iOS takes tens of minutes, so the result is cached
       # and only rebuilt when OPENCV_VERSION changes. The `-v2` suffix
-      # invalidates any entry saved by the earlier, broken script.
+      # invalidates any entry saved by an earlier build configuration.
       - name: Cache the OpenCV xcframework
         id: opencv-cache
         uses: actions/cache@v4
         with:
           path: packages/wechat_qrcode/ios/opencv2.xcframework
-          key: opencv-ios-${{ env.OPENCV_VERSION }}-${{ runner.arch }}-v2
+          key: opencv-ios-${{ env.OPENCV_VERSION }}-${{ runner.arch }}-v3
 
       - name: Build the OpenCV xcframework
         if: steps.opencv-cache.outputs.cache-hit != 'true'

@@ -30,6 +30,12 @@
 #   `flann`, and `core` itself pulls in `cudev` — verified against the real
 #   4.12.0 sources. Those are genuine requirements, not padding.
 #
+# Only the arm64 simulator slice is built. The delivery target is a physical
+# arm64 device installed through TrollStore, so the device slice is what matters
+# and the arm64 simulator slice covers running on an Apple-silicon Mac. The
+# x86_64 simulator slice would double the simulator half of a ~30 minute build
+# for a use this project does not have.
+#
 # Requirements: macOS with Xcode command line tools, cmake >= 3.20, python3.
 #
 # Usage:
@@ -229,27 +235,55 @@ DISABLE_ARGS=(
 
 # ---------------------------------------------------------------- build
 
-echo "==> Building the xcframework (device arm64, simulator arm64+x86_64)"
+echo "==> Building the xcframework (device arm64, simulator arm64)"
 rm -rf "$BUILD_OUT"
+
+# The build output is captured rather than only streamed, because the useful
+# error is almost never at the end: a failure during compilation reports the
+# offending file far above the final make error, and CMakeError.log only covers
+# configure-time compiler checks.
+BUILD_LOG="$WORK_DIR/opencv-build.log"
 
 set +e
 python3 "$BUILD_XCFRAMEWORK_PY" \
   --out "$BUILD_OUT" \
   --framework_name opencv2 \
   --iphoneos_archs arm64 \
-  --iphonesimulator_archs arm64,x86_64 \
+  --iphonesimulator_archs arm64 \
   --build_only_specified_archs \
   --iphoneos_deployment_target "$DEPLOYMENT_TARGET" \
   --contrib "$CONTRIB_SRC" \
   "${DISABLE_ARGS[@]}" \
-  "${WITHOUT_ARGS[@]}"
-BUILD_STATUS=$?
+  "${WITHOUT_ARGS[@]}" 2>&1 | tee "$BUILD_LOG"
+BUILD_STATUS=${PIPESTATUS[0]}
 set -e
 
 if [[ $BUILD_STATUS -ne 0 ]]; then
-  # The official script's output is long and the actual error is usually well
-  # above the end of it, so the CMake logs are surfaced explicitly. Without
-  # this the failure is just "exit code 1" and diagnosing it costs a round trip.
+  # Reported three ways, because each reaches a different reader:
+  #   * stderr, for a human watching the log
+  #   * the job summary, which is readable through the public API without a
+  #     token — that is what makes a failure diagnosable without a round trip
+  #   * the CMake logs, for configure-time failures specifically
+  {
+    echo "## OpenCV xcframework build failed (exit $BUILD_STATUS)"
+    echo
+    echo "Modules deliberately kept: \`${MODULES}\` (plus their transitive closure)."
+    echo
+    echo "### Compiler / make errors"
+    echo '```'
+    grep -nE "error:|fatal error|Error [0-9]+|FAILED|undefined symbol" "$BUILD_LOG" 2>/dev/null | head -40
+    echo '```'
+    echo "### Last 60 lines of the build output"
+    echo '```'
+    tail -n 60 "$BUILD_LOG" 2>/dev/null
+    echo '```'
+  } > "$WORK_DIR/failure-summary.md" 2>/dev/null || true
+
+  cat "$WORK_DIR/failure-summary.md" >&2 || true
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    cat "$WORK_DIR/failure-summary.md" >> "$GITHUB_STEP_SUMMARY"
+  fi
+
   echo "::error::the OpenCV xcframework build failed (exit $BUILD_STATUS)" >&2
   while IFS= read -r log; do
     echo "----- ${log} (last 40 lines) -----" >&2
