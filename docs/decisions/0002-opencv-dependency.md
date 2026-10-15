@@ -20,10 +20,26 @@ ocv_define_module(wechat_qrcode opencv_core opencv_imgproc opencv_objdetect open
                   WRAP java objc python js)
 ```
 
-So the transitive requirement is exactly **core, imgproc, objdetect, dnn**, plus the module itself.
+So the transitive requirement is **core, imgproc, objdetect, dnn**, plus the module itself.
 Notably `imgcodecs` is *not* required: neither implementation decodes image files with OpenCV
 (Android uses `BitmapFactory`, iOS uses `UIImage`), which is why gallery decoding does not pull that
 module in.
+
+The `ocv_define_module` line is not the whole closure. The module's own `CMakeLists.txt` sits inside
+OpenCV and its real dependencies cascade:
+
+```
+wechat_qrcode → core, imgproc, objdetect, dnn
+objdetect     → core, imgproc, calib3d, dnn
+calib3d       → core, imgproc, features2d, flann
+features2d    → core, imgproc, flann
+flann         → core
+```
+
+Read from the 4.12.0 sources, the closure is therefore **core, imgproc, objdetect, dnn, calib3d,
+features2d, flann, wechat_qrcode** — eight modules, not five. This was found by parsing the
+declarations rather than assuming the five names were sufficient; `scripts/build_opencv_ios.sh`
+computes the same closure at build time for exactly this reason.
 
 ## Decision — Android
 
@@ -43,7 +59,7 @@ Rejected alternatives:
   binary into this repository's history and redistribute a binary whose contents we cannot
   describe — precisely what §9.3 forbids.
 * **Building a minimal `libopencv_java4.so` from source** with
-  `BUILD_LIST=core,imgproc,objdetect,dnn,wechat_qrcode`. This is the strictest reading of the
+  `BUILD_LIST` set to the eight-module closure above. This is the strictest reading of the
   minimal-dependency rule and would shrink the ~23 MB arm64 library. It was deferred, not dismissed:
   it is a long, fragile Windows build whose output would then have to be committed or hosted. If the
   APK size becomes a problem, this is the documented next step.
@@ -56,7 +72,8 @@ reproducible, source-free dependency.
 ## Decision — iOS
 
 Build a minimal `opencv2.xcframework` with `scripts/build_opencv_ios.sh`
-(`-DBUILD_LIST=core,imgproc,objdetect,dnn,wechat_qrcode`). No published OpenCV iOS framework
+(`--without` for every module outside the eight-module closure, since the official script has no
+whitelist). No published OpenCV iOS framework
 includes `wechat_qrcode`, so a custom build is unavoidable; making it minimal at the same time costs
 nothing extra.
 

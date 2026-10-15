@@ -1,16 +1,33 @@
 #!/usr/bin/env bash
 #
-# Builds the minimal OpenCV xcframework the iOS side of packages/wechat_qrcode
-# links against.
+# Builds the OpenCV xcframework the iOS side of packages/wechat_qrcode links
+# against.
 #
-# Why a custom build rather than a prebuilt OpenCV framework:
+# Why a custom build at all:
 #
-#   * `opencv_contrib/modules/wechat_qrcode/CMakeLists.txt` declares its
-#     dependencies as `opencv_core opencv_imgproc opencv_objdetect opencv_dnn`.
-#     Those five modules, and nothing else, are what this project may ship
-#     (CLAUDE.md §1, §9.3).
-#   * No published OpenCV iOS framework includes `wechat_qrcode`, so one has to
-#     be built anyway.
+#   * No published OpenCV iOS framework includes `wechat_qrcode` (it lives in
+#     opencv_contrib), so one has to be built regardless.
+#   * CLAUDE.md §1/§9.3 require keeping only what the engine needs.
+#
+# How the trimming works, and its limits:
+#
+#   OpenCV's official `platforms/apple/build_xcframework.py` has no module
+#   *whitelist*, only `--without MODULE` exclusions. Unknown arguments are
+#   parsed and then discarded ("will not be used"), so `-DBUILD_LIST=...` cannot
+#   be injected through it. An earlier version of this script passed
+#   `-DBUILD_opencv_framework=ON`; that flag does not exist in OpenCV 4.12, so
+#   the variable was silently unused and no framework was ever produced — which
+#   is how the first CI run failed.
+#
+#   The exclusions are therefore *computed*: every module in both source trees
+#   that is not in the transitive dependency closure of `wechat_qrcode` is
+#   passed to `--without`. The closure is read from each module's own
+#   `ocv_define_module(...)` / `ocv_add_module(...)` declaration, so it tracks
+#   the sources rather than a hard-coded list of names.
+#
+#   Note that the closure is larger than the five modules the module itself
+#   names — `objdetect` pulls in `calib3d`, which pulls in `features2d` and
+#   `flann`. Those are genuine requirements, not padding.
 #
 # Requirements: macOS with Xcode command line tools, cmake >= 3.20, python3.
 #
@@ -18,35 +35,35 @@
 #   scripts/build_opencv_ios.sh
 #   OPENCV_VERSION=4.12.0 scripts/build_opencv_ios.sh
 #
-# The output is placed at packages/wechat_qrcode/ios/opencv2.xcframework and is
-# deliberately NOT committed (.gitignore excludes *.xcframework).
+# Output: packages/wechat_qrcode/ios/opencv2.xcframework, which is deliberately
+# not committed (.gitignore excludes *.xcframework).
 #
 # ---------------------------------------------------------------------------
-# STATUS: this script has not been executed. It was authored on Windows, where
-# no macOS toolchain exists, so the iOS build in this repository is unverified.
-# Run it on a Mac and report the result before claiming iOS support.
+# STATUS: not yet verified end to end. The previous cmake-based implementation
+# failed in CI; this one uses OpenCV's maintained build script, which is far
+# more likely to work but has not been run on a Mac yet.
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
 
 OPENCV_VERSION="${OPENCV_VERSION:-4.12.0}"
 OPENCV_CONTRIB_BRANCH="${OPENCV_CONTRIB_BRANCH:-4.x}"
+DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET:-13.0}"
+
+# What the engine needs, before the transitive closure is expanded.
+MODULES="core imgproc objdetect dnn wechat_qrcode"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${WORK_DIR:-$REPO_ROOT/scripts/opencv-ios-build}"
 OUTPUT_DIR="$REPO_ROOT/packages/wechat_qrcode/ios"
-DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET:-13.0}"
-
-# Only what wechat_qrcode needs. Adding a module here widens both the licence
-# surface and the binary size, so keep this list short and justified.
-MODULES="core,imgproc,objdetect,dnn,wechat_qrcode"
+BUILD_OUT="$WORK_DIR/xcframework"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "error: this script needs macOS (Xcode toolchain). Current: $(uname -s)" >&2
   exit 1
 fi
 
-for tool in cmake python3 xcodebuild; do
+for tool in python3 cmake xcodebuild nm; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "error: required tool '$tool' not found." >&2
     exit 1
@@ -74,72 +91,189 @@ fi
 
 OPENCV_SRC="$WORK_DIR/opencv-$OPENCV_VERSION"
 CONTRIB_SRC="$WORK_DIR/opencv_contrib-$OPENCV_CONTRIB_BRANCH"
+BUILD_XCFRAMEWORK_PY="$OPENCV_SRC/platforms/apple/build_xcframework.py"
 
-if [[ ! -f "$CONTRIB_SRC/modules/wechat_qrcode/CMakeLists.txt" ]]; then
-  echo "error: wechat_qrcode module not found in $CONTRIB_SRC/modules" >&2
+for required in \
+  "$CONTRIB_SRC/modules/wechat_qrcode/CMakeLists.txt" \
+  "$BUILD_XCFRAMEWORK_PY"; do
+  if [[ ! -f "$required" ]]; then
+    echo "error: expected file not found: $required" >&2
+    exit 1
+  fi
+done
+
+# ------------------------------------------------- compute the --without list
+
+echo "==> Computing the module exclusion list (keeping: $MODULES)"
+WITHOUT_FILE="$WORK_DIR/without_modules.txt"
+python3 - "$OPENCV_SRC/modules" "$CONTRIB_SRC/modules" $MODULES > "$WITHOUT_FILE" <<'PY'
+import os
+import re
+import sys
+
+main_modules, contrib_modules = sys.argv[1], sys.argv[2]
+keep = sys.argv[3:]
+
+# Which modules exist at all. Anything that is not one of these names is a CMake
+# keyword or a language binding (WRAP, OPTIONAL, java, objc, python, js, …) and
+# is dropped automatically by filtering dependencies against this set.
+available = set()
+for root in (main_modules, contrib_modules):
+    if not os.path.isdir(root):
+        continue
+    for name in os.listdir(root):
+        if os.path.isfile(os.path.join(root, name, 'CMakeLists.txt')):
+            available.add(name)
+
+# Both spellings are in use: `ocv_define_module` in most modules and
+# `ocv_add_module` in others (dnn, for example).
+DECLARATION = re.compile(r'ocv_(?:define|add)_module\s*\(')
+IDENTIFIER = re.compile(r'[A-Za-z0-9_]+')
+
+
+def dependencies_of(path):
+    """Returns the module names declared after the module's own name."""
+    with open(path, 'r', errors='replace') as handle:
+        text = handle.read()
+    match = DECLARATION.search(text)
+    if not match:
+        return set()
+
+    # Scan to the matching close paren; the argument list can span lines and
+    # can contain nested parentheses.
+    depth = 1
+    index = match.end()
+    while index < len(text) and depth:
+        if text[index] == '(':
+            depth += 1
+        elif text[index] == ')':
+            depth -= 1
+        index += 1
+    arguments = text[match.end():index - 1]
+
+    # Drop `WRAP` and everything after it: those are binding languages, not
+    # module dependencies.
+    wrap = arguments.find('WRAP')
+    if wrap != -1:
+        arguments = arguments[:wrap]
+
+    # Dependencies are written with an `opencv_` prefix (`opencv_calib3d`) while
+    # the module directories are not (`calib3d`), so the prefix is stripped
+    # before matching. Without this every dependency is discarded and the
+    # closure collapses to the explicitly listed modules — which silently drops
+    # real requirements such as objdetect's dependency on calib3d.
+    names = IDENTIFIER.findall(arguments)
+    normalised = {
+        name[len('opencv_'):] if name.startswith('opencv_') else name
+        for name in names
+    }
+    return {name for name in normalised if name in available}
+
+
+deps = {}
+for root in (main_modules, contrib_modules):
+    if not os.path.isdir(root):
+        continue
+    for name in sorted(available):
+        path = os.path.join(root, name, 'CMakeLists.txt')
+        if os.path.isfile(path):
+            deps[name] = dependencies_of(path)
+
+missing = [name for name in keep if name not in available]
+if missing:
+    print('error: module(s) not found in the sources: %s' % ', '.join(missing),
+          file=sys.stderr)
+    sys.exit(1)
+
+closure = set()
+queue = list(keep)
+while queue:
+    current = queue.pop()
+    if current in closure:
+        continue
+    closure.add(current)
+    queue.extend(dep for dep in deps.get(current, ()) if dep not in closure)
+
+kept = sorted(closure & available)
+print('    keeping %d module(s): %s' % (len(kept), ' '.join(kept)),
+      file=sys.stderr)
+
+for name in sorted(available - closure):
+    print('--without')
+    print(name)
+PY
+
+if [[ ! -s "$WITHOUT_FILE" ]]; then
+  echo "error: the exclusion list came out empty; refusing to build every module." >&2
   exit 1
 fi
+
+# Read one flag per line. A while-read loop rather than `mapfile`: macOS ships
+# bash 3.2, which has no `mapfile`.
+WITHOUT_ARGS=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && WITHOUT_ARGS+=("$line")
+done < "$WITHOUT_FILE"
+
+echo "    excluding $(( ${#WITHOUT_ARGS[@]} / 2 )) module(s)"
+
+# Unused backends and external dependencies: build time and link surface for no
+# benefit here. `protobuf` is deliberately NOT disabled — dnn needs it to load
+# the Caffe models this engine is built around.
+DISABLE_ARGS=(
+  --disable ffmpeg --disable gstreamer --disable gtk --disable qt
+  --disable opencl --disable ipp --disable openmp --disable tbb
+  --disable cuda --disable eigen
+)
 
 # ---------------------------------------------------------------- build
 
-# $1 = cmake system name, $2 = architectures, $3 = build dir, $4 = extra args
-build_slice() {
-  local sysname="$1"
-  local archs="$2"
-  local build_dir="$3"
+echo "==> Building the xcframework (device arm64, simulator arm64+x86_64)"
+rm -rf "$BUILD_OUT"
+python3 "$BUILD_XCFRAMEWORK_PY" \
+  --out "$BUILD_OUT" \
+  --framework_name opencv2 \
+  --iphoneos_archs arm64 \
+  --iphonesimulator_archs arm64,x86_64 \
+  --build_only_specified_archs \
+  --iphoneos_deployment_target "$DEPLOYMENT_TARGET" \
+  --contrib "$CONTRIB_SRC" \
+  "${DISABLE_ARGS[@]}" \
+  "${WITHOUT_ARGS[@]}"
 
-  echo "==> Building $sysname ($archs)"
-  cmake -S "$OPENCV_SRC" -B "$build_dir" \
-    -DCMAKE_SYSTEM_NAME="$sysname" \
-    -DCMAKE_OSX_ARCHITECTURES="$archs" \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DOPENCV_EXTRA_MODULES_PATH="$CONTRIB_SRC/modules" \
-    -DBUILD_LIST="$MODULES" \
-    -DBUILD_SHARED_LIBS=OFF \
-    -DBUILD_opencv_framework=ON \
-    -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
-    -DBUILD_opencv_apps=OFF -DBUILD_JAVA=OFF -DBUILD_opencv_python3=OFF \
-    -DBUILD_DOCS=OFF \
-    -DWITH_IPP=OFF -DWITH_OPENCL=OFF -DWITH_CUDA=OFF \
-    -DWITH_FFMPEG=OFF -DWITH_GTK=OFF -DWITH_QT=OFF \
-    -DOPENCV_ENABLE_NONFREE=OFF
-
-  cmake --build "$build_dir" --config Release --parallel "$(sysctl -n hw.ncpu)"
-}
-
-# Device slice.
-build_slice "iOS" "arm64" "$WORK_DIR/build-ios"
-
-# Simulator slice: both architectures in one framework so an Apple-silicon Mac
-# can run the simulator build.
-build_slice "iOS" "arm64;x86_64" "$WORK_DIR/build-simulator" \
-  "-DCMAKE_OSX_SYSROOT=iphonesimulator"
-
-# ---------------------------------------------------------------- xcframework
-
-FRAMEWORK_DEVICE="$WORK_DIR/build-ios/lib/Release/opencv2.framework"
-FRAMEWORK_SIM="$WORK_DIR/build-simulator/lib/Release/opencv2.framework"
-
-if [[ ! -d "$FRAMEWORK_DEVICE" || ! -d "$FRAMEWORK_SIM" ]]; then
-  echo "error: expected frameworks were not produced." >&2
-  echo "  device:     $FRAMEWORK_DEVICE" >&2
-  echo "  simulator:  $FRAMEWORK_SIM" >&2
+PRODUCED="$BUILD_OUT/opencv2.xcframework"
+if [[ ! -d "$PRODUCED" ]]; then
+  echo "error: $PRODUCED was not produced." >&2
   exit 1
 fi
 
-echo "==> Creating opencv2.xcframework"
+# ---------------------------------------------------------------- verify
+
+echo "==> Verifying the framework carries the WeChat QRCode engine"
+# A C++ class lands in the binary under a mangled name, so a substring check is
+# enough to catch a build that silently dropped the module — which is exactly
+# the failure mode of getting the --without list wrong.
+BINARY="$(find "$PRODUCED" -type f -name opencv2 | head -1)"
+if [[ -z "$BINARY" ]]; then
+  echo "error: no opencv2 binary found inside $PRODUCED." >&2
+  exit 1
+fi
+if ! nm -gU "$BINARY" 2>/dev/null | grep -q 'wechat_qrcode'; then
+  echo "error: $BINARY does not contain the wechat_qrcode symbols." >&2
+  echo "       The --without list removed a module it was meant to keep." >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------- install
+
+# Copied rather than built in place: build_xcframework.py leaves intermediate
+# folders next to its output, and those must not land in the repository.
 rm -rf "$OUTPUT_DIR/opencv2.xcframework"
-xcodebuild -create-xcframework \
-  -framework "$FRAMEWORK_DEVICE" \
-  -framework "$FRAMEWORK_SIM" \
-  -output "$OUTPUT_DIR/opencv2.xcframework"
+cp -R "$PRODUCED" "$OUTPUT_DIR/opencv2.xcframework"
 
 echo
 echo "Done: $OUTPUT_DIR/opencv2.xcframework"
+echo "      binary: $BINARY"
 echo
-echo "Verify before relying on it:"
-echo "  - the xcframework contains only: $MODULES"
-echo "  - 'cv::wechat_qrcode::WeChatQRCode' resolves (nm on the binary)"
-echo "  - a clean 'flutter build ios --release' succeeds, then install the .ipa"
-echo "    with TrollStore on the target device."
+echo "Next: cd app && flutter build ios --release --no-codesign"
+echo "      then install the resulting .ipa with TrollStore."

@@ -70,9 +70,14 @@ not a gap to be closed later.
 
 Nothing below has been checked:
 
-1. **The OpenCV framework builds.** `scripts/build_opencv_ios.sh` was authored on Windows and has
-   never run. Whether `BUILD_LIST=core,imgproc,objdetect,dnn,wechat_qrcode` produces a framework that
-   links, and whether `wechat_qrcode.hpp` is reachable at the expected path, is unknown.
+1. **The OpenCV framework builds.** The first CI attempt failed here, and the reason is instructive:
+   the original script drove cmake by hand and passed `-DBUILD_opencv_framework=ON`, a flag that does
+   not exist in OpenCV 4.12 — cmake treats unknown `-D` variables as unused, so no framework was ever
+   produced. The script now uses OpenCV's maintained `platforms/apple/build_xcframework.py` and
+   computes its `--without` list from the module dependency declarations (see ADR-0002 for the
+   eight-module closure). That module-selection logic is unit-tested, but the build itself still has
+   not run on a Mac: whether `build_xcframework.py` accepts the exclusion list and produces a
+   linkable framework is unknown.
 2. **The plugin compiles.** Swift/ObjC++ interop across the `include/` header, the
    `FlutterPlatformViewFactory` signatures and the `AVCaptureConnection.videoRotationAngle`
    availability branch are all unexercised.
