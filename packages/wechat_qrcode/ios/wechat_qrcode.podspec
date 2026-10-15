@@ -14,9 +14,9 @@ Pod::Spec.new do |s|
 Wraps OpenCV's cv::wechat_qrcode::WeChatQRCode detector and a camera preview for
 use from Flutter. Ships the four CNN model files with the plugin.
                        DESC
-  s.homepage         = 'https://github.com/OWNER/REPO'
+  s.homepage         = 'https://github.com/sundys/WechatQR'
   s.license          = { :type => 'Apache-2.0', :file => '../LICENSE' }
-  s.author           = { 'WeChatQR project' => 'noreply@example.com' }
+  s.author           = { 'sundys' => 'https://github.com/sundys' }
   s.source           = { :path => '.' }
 
   s.source_files        = 'wechat_qrcode/Sources/wechat_qrcode/**/*.{swift,h,mm}'

@@ -11,9 +11,9 @@ Vibration, saving generated QR images to the photo library, and opening the app'
 system settings screen. Installing packages is Android-only and reports
 "unsupported" here.
                        DESC
-  s.homepage         = 'https://github.com/OWNER/REPO'
+  s.homepage         = 'https://github.com/sundys/WechatQR'
   s.license          = { :type => 'Apache-2.0', :file => '../LICENSE' }
-  s.author           = { 'WeChatQR project' => 'noreply@example.com' }
+  s.author           = { 'sundys' => 'https://github.com/sundys' }
   s.source           = { :path => '.' }
   s.source_files = 'platform_services/Sources/platform_services/**/*'
   s.dependency 'Flutter'

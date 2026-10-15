@@ -230,6 +230,8 @@ DISABLE_ARGS=(
 
 echo "==> Building the xcframework (device arm64, simulator arm64+x86_64)"
 rm -rf "$BUILD_OUT"
+
+set +e
 python3 "$BUILD_XCFRAMEWORK_PY" \
   --out "$BUILD_OUT" \
   --framework_name opencv2 \
@@ -240,6 +242,24 @@ python3 "$BUILD_XCFRAMEWORK_PY" \
   --contrib "$CONTRIB_SRC" \
   "${DISABLE_ARGS[@]}" \
   "${WITHOUT_ARGS[@]}"
+BUILD_STATUS=$?
+set -e
+
+if [[ $BUILD_STATUS -ne 0 ]]; then
+  # The official script's output is long and the actual error is usually well
+  # above the end of it, so the CMake logs are surfaced explicitly. Without
+  # this the failure is just "exit code 1" and diagnosing it costs a round trip.
+  echo "::error::the OpenCV xcframework build failed (exit $BUILD_STATUS)" >&2
+  while IFS= read -r log; do
+    echo "----- ${log} (last 40 lines) -----" >&2
+    tail -n 40 "$log" >&2
+  done < <(find "$BUILD_OUT" \( -name 'CMakeError.log' -o -name 'CMakeOutput.log' \) 2>/dev/null | head -4)
+  echo "----- module exclusion list that was used -----" >&2
+  echo "keeping: ${MODULES}" >&2
+  tr '\n' ' ' < "$WITHOUT_FILE" >&2
+  echo >&2
+  exit $BUILD_STATUS
+fi
 
 PRODUCED="$BUILD_OUT/opencv2.xcframework"
 if [[ ! -d "$PRODUCED" ]]; then
