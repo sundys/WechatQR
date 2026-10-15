@@ -42,7 +42,7 @@
 #   scripts/build_opencv_ios.sh
 #   OPENCV_VERSION=4.12.0 scripts/build_opencv_ios.sh
 #
-# Output: packages/wechat_qrcode/ios/opencv2.xcframework, which is deliberately
+# Output: packages/wechat_qrcode/ios/wechat_qrcode/opencv2.xcframework, deliberately
 # not committed (.gitignore excludes *.xcframework).
 #
 # ---------------------------------------------------------------------------
@@ -62,7 +62,12 @@ MODULES="core imgproc objdetect dnn wechat_qrcode"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${WORK_DIR:-$REPO_ROOT/scripts/opencv-ios-build}"
-OUTPUT_DIR="$REPO_ROOT/packages/wechat_qrcode/ios"
+# The framework goes inside the Swift package, next to its Package.swift.
+# Swift Package Manager resolves a binaryTarget path relative to that file and
+# will not accept one outside the package, so a sibling of the podspec (where
+# CocoaPods would look) is invisible to SPM. The podspec now points here too,
+# so both integrations read the same copy.
+OUTPUT_DIR="$REPO_ROOT/packages/wechat_qrcode/ios/wechat_qrcode"
 BUILD_OUT="$WORK_DIR/xcframework"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then

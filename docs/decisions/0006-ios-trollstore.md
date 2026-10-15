@@ -47,12 +47,32 @@ is platform-conditional except the update row.
 * `installApk`, `canInstallPackages` and the install-permission screen return `unsupported`; the
   version row opens the Releases page instead (§3.2).
 
+## Where the OpenCV framework has to live
+
+Inside the Swift package: `packages/wechat_qrcode/ios/wechat_qrcode/opencv2.xcframework`.
+
+Flutter builds plugins with **Swift Package Manager** when they ship a `Package.swift`, and SPM
+resolves `.binaryTarget(path:)` relative to that file, refusing anything outside the package
+directory. The framework was initially placed next to the podspec
+(`packages/wechat_qrcode/ios/opencv2.xcframework`), which is where CocoaPods looks — so SPM resolved
+the path, found no artifact, and failed the build with:
+
+```
+local binary target 'opencv2' at .../Packages/.packages/wechat_qrcode/opencv2.xcframework
+does not contain a binary artifact.
+```
+
+The path in that message is the giveaway: `.packages/wechat_qrcode` mirrors
+`ios/wechat_qrcode/`, the directory holding `Package.swift`, not `ios/` itself. The podspec now
+points at the same file (`wechat_qrcode/opencv2.xcframework`, podspec paths being relative to the
+podspec), so whichever dependency manager Flutter picks, both read one copy.
+
 ## Build procedure (to be performed on macOS)
 
 Local:
 
 ```bash
-scripts/build_opencv_ios.sh      # produces packages/wechat_qrcode/ios/opencv2.xcframework
+scripts/build_opencv_ios.sh      # produces packages/wechat_qrcode/ios/wechat_qrcode/opencv2.xcframework
 cd app
 flutter build ios --release --no-codesign
 ```

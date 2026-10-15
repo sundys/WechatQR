@@ -31,8 +31,11 @@ use from Flutter. Ships the four CNN model files with the plugin.
   s.platform = :ios, '13.0'
   s.swift_version = '5.0'
 
-  # Minimal OpenCV build: core, imgproc, objdetect, dnn and wechat_qrcode only.
-  s.vendored_frameworks = 'opencv2.xcframework'
+  # Minimal OpenCV build: the nine modules wechat_qrcode needs and nothing else.
+  # Podspec paths are relative to the podspec, so this points into the Swift
+  # package directory - which is where Swift Package Manager requires a
+  # binaryTarget to live. Both integrations read the same copy.
+  s.vendored_frameworks = 'wechat_qrcode/opencv2.xcframework'
   s.libraries = 'c++'
 
   s.pod_target_xcconfig = {

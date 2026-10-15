@@ -72,8 +72,8 @@ jobs:
         id: opencv-cache
         uses: actions/cache/restore@v5
         with:
-          path: packages/wechat_qrcode/ios/opencv2.xcframework
-          key: opencv-ios-${{ env.OPENCV_VERSION }}-${{ runner.arch }}-v4
+          path: packages/wechat_qrcode/ios/wechat_qrcode/opencv2.xcframework
+          key: opencv-ios-${{ env.OPENCV_VERSION }}-${{ runner.arch }}-v5
 
       - name: Build the OpenCV xcframework
         if: steps.opencv-cache.outputs.cache-hit != 'true'
@@ -97,13 +97,13 @@ jobs:
         if: steps.opencv-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
-          path: packages/wechat_qrcode/ios/opencv2.xcframework
-          key: opencv-ios-${{ env.OPENCV_VERSION }}-${{ runner.arch }}-v4
+          path: packages/wechat_qrcode/ios/wechat_qrcode/opencv2.xcframework
+          key: opencv-ios-${{ env.OPENCV_VERSION }}-${{ runner.arch }}-v5
 
       - name: Confirm the framework is present
         run: |
           set -euo pipefail
-          test -d packages/wechat_qrcode/ios/opencv2.xcframework \
+          test -d packages/wechat_qrcode/ios/wechat_qrcode/opencv2.xcframework \
             || { echo "::error::opencv2.xcframework is missing; the plugin cannot link."; exit 1; }
 
       - name: Resolve dependencies
