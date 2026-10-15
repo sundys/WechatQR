@@ -51,5 +51,24 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
 
+  # Icon generation. A dev-only tool: it produces the Android mipmaps and the
+  # iOS AppIcon set from one source image, which are then committed, so nothing
+  # about the shipped build depends on it.
+  flutter_launcher_icons: ^0.14.4
+
+# Icon source and derivations. See docs/decisions/0008-app-icons.md.
+flutter_launcher_icons:
+  android: true
+  ios: true
+  # The flattened original: iOS icons must be opaque, and the artwork's
+  # transparent corners would otherwise be filled with an arbitrary colour.
+  # Filling them from the artwork's own boundary colour keeps the result faithful.
+  image_path: assets/icon/app_icon_opaque.png
+  # The artwork is a full-bleed design, so it belongs in the background layer,
+  # which the launcher masks. Adaptive icons require a foreground as well; this
+  # one is fully transparent, so the background shows through unaltered.
+  adaptive_icon_background: assets/icon/app_icon_opaque.png
+  adaptive_icon_foreground: assets/icon/app_icon_foreground.png
+
 flutter:
   uses-material-design: true
