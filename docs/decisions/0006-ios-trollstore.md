@@ -61,7 +61,7 @@ On CI, the manual workflow `.github/workflows/ios.yml` does the same and package
 `wechatqr-<version>.ipa`. It is a separate workflow from the Android release on purpose: a cold run
 compiles OpenCV for iOS, which takes tens of minutes and would otherwise hold up every Android
 release. Running it with `attach_to_release` set to a tag attaches the `.ipa` to that existing
-release; leaving it empty only uploads a workflow artifact.
+release; leaving it empty only builds and verifies the .ipa, publishing nothing.
 
 The `.ipa` is unsigned. That is deliberate — TrollStore applies its own signing on the device — and
 not a gap to be closed later.

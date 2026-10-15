@@ -6,16 +6,17 @@ name: iOS build (manual)
 # minutes on a cold cache, and iOS is not covered by the Android release path,
 # so the .ipa is built when it is wanted rather than on every release.
 #
-# Run it from Actions > "iOS build (manual)" > Run workflow. Leave
-# `attach_to_release` empty to only upload the artifact, or set it to an
-# existing release tag (for example `v1.0.0`) to also attach the .ipa to that
-# release.
+# Run it from Actions > "iOS build (manual)" > Run workflow. Set
+# `attach_to_release` to an existing release tag (for example `v1.0.2`) to
+# attach the .ipa to that release. Leaving it empty still builds and verifies
+# the .ipa, but publishes nothing: the release page is the only place artifacts
+# are published, so there is deliberately no workflow artifact to collect.
 
 on:
   workflow_dispatch:
     inputs:
       attach_to_release:
-        description: 'Release tag to attach the .ipa to (empty = artifact only)'
+        description: 'Release tag to attach the .ipa to (empty = build only, publishes nothing)'
         required: false
         default: ''
         type: string
@@ -35,7 +36,7 @@ jobs:
     outputs:
       name: ${{ steps.read.outputs.name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read the version from pubspec.yaml
         id: read
@@ -56,7 +57,7 @@ jobs:
     timeout-minutes: 300
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -123,13 +124,10 @@ jobs:
           (cd "$RUNNER_TEMP/ipa" && zip -qry "$out" Payload)
           echo "Built $out ($(stat -f%z "$out") bytes)."
 
-      - name: Upload the IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-ipa
-          path: app/wechatqr-*.ipa
-          if-no-files-found: error
-          retention-days: 30
+      - name: Note that nothing was published
+        if: inputs.attach_to_release == ''
+        run: |
+          echo "::notice title=Nothing published::The .ipa was built and verified, but attach_to_release was empty. Re-run with a release tag (for example v1.0.2) to attach it to that release. There is no workflow artifact to download by design — the release page is where artifacts live."
 
       - name: Attach the .ipa to a release
         if: inputs.attach_to_release != ''

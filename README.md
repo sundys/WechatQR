@@ -167,7 +167,9 @@ tens of minutes and would hold up every Android release. Build the `.ipa` when y
 ### Before the first tagged release
 
 Android signing configuration must exist as repository secrets. Until then, run `release.yml`
-manually: it builds the APK and uploads it as a workflow artifact, and **publishes nothing**.
+manually: it builds and verifies the APK and **publishes nothing**. Note that a manual run leaves no
+downloadable output — artifacts are published only through releases, so use a tag when you want a
+file.
 
 | Secret | Purpose |
 |---|---|
@@ -205,8 +207,11 @@ Actions → **iOS build (manual)** → *Run workflow*.
 
 | Input | Effect |
 |---|---|
-| `attach_to_release` left empty | Builds the `.ipa` and uploads it as a workflow artifact only |
-| `attach_to_release` set to a tag, e.g. `v1.0.0` | Also attaches `wechatqr-<version>.ipa` to that release |
+| `attach_to_release` set to a tag, e.g. `v1.0.2` | Builds the `.ipa` and attaches `wechatqr-<version>.ipa` to that release |
+| `attach_to_release` left empty | Builds and verifies the `.ipa`, then publishes nothing — useful for checking that the iOS build still works |
+
+Workflow artifacts are deliberately not used: everything published lives on the release page, so there
+is one place to look for a downloadable build.
 
 The job builds a minimal OpenCV framework first (`scripts/build_opencv_ios.sh`), cached under
 `opencv-ios-<version>`, so that step runs once per OpenCV version rather than per build. It then runs
