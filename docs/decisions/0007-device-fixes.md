@@ -45,6 +45,15 @@ than stacking a second prompt.
 uses, added as `ViewfinderView` over the CameraX preview. It is decoration only — `clickable` and
 `focusable` are cleared so it cannot swallow touches meant for the Flutter layer above it.
 
+**The mask must be turned off.** The library's default `onDraw` calls `drawExterior`, which builds a
+path of the whole view, subtracts the scan frame with `Path.Op.DIFFERENCE` and fills the remainder
+with `#60000000`. The result is a bright centred rectangle — 62.5% of the width by default — with
+everything around it dimmed, which on a full-page preview reads as a small window rather than a
+full-screen camera. The first build that shipped this was reported exactly that way. Passing
+`setMaskColor(Color.TRANSPARENT)` makes `drawExterior` return immediately, restoring the full-bleed
+preview while keeping the frame outline and the animated laser line. The project spec asks for the
+preview to fill the page (§6.1), so this is not a matter of taste.
+
 **Result indicators** are drawn in Flutter, not by `ViewfinderView.showResultPoints`. The reason is
 decision 3: the same tap that would select a code has to drive a three-second timer in Dart, and
 splitting one interaction across a native view and a Flutter overlay invites gesture conflicts. The

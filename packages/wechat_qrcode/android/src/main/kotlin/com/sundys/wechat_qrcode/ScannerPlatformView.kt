@@ -17,6 +17,7 @@ package com.sundys.wechat_qrcode
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Color
 import android.graphics.Point
 import android.os.Handler
 import android.os.Looper
@@ -85,6 +86,15 @@ internal class ScannerPlatformView(
         // away from the Flutter layer that sits above it.
         isClickable = false
         isFocusable = false
+
+        // The library's default draws `#60000000` over everything outside its
+        // scan frame (drawExterior uses Path.Op.DIFFERENCE), which leaves only a
+        // small centred rectangle bright. On a full-page preview that reads as a
+        // window rather than a full-screen camera, and the spec asks for the
+        // preview to fill the page. Setting the mask to transparent makes
+        // drawExterior return immediately; the frame outline and the animated
+        // laser line are unaffected.
+        setMaskColor(Color.TRANSPARENT)
     }
 
     init {

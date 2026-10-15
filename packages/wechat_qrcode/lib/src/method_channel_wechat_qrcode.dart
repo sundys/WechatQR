@@ -114,8 +114,8 @@ class MethodChannelWeChatQrCode extends WeChatQrCodePlatform {
         return AndroidView(
           key: key,
           viewType: viewType,
-          // The preview is a SurfaceView-backed CameraX PreviewView; letting
-          // Flutter layer a texture over it is unnecessary and costs frames.
+          // The preview runs in PreviewView's COMPATIBLE mode (TextureView),
+          // which composites predictably inside the Flutter view hierarchy.
           layoutDirection: TextDirection.ltr,
         );
       case TargetPlatform.iOS:
