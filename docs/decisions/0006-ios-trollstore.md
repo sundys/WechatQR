@@ -89,10 +89,18 @@ Nothing below has been checked:
      verification step, which looked for `wechat_qrcode` in `nm -gU` output. OpenCV compiles with
      `-fvisibility=hidden`, and `nm -g` filters by external linkage, so the check reported a healthy
      build as broken. It now checks the build log for the compiled target instead — evidence no
-     compiler flag can defeat — and treats the symbol lookup as informational.
+     compiler flag can defeat — and treats the symbol lookup as informational;
+   * the fourth attempt built and verified the framework, then died on the last informational line of
+     the script, which still referenced `$BINARY` after that variable had been renamed. Under
+     `set -u` a stale name aborts the script, so another working build was reported as a failure.
 
-   The framework is ~18 minutes of work, so the workflow caches it under
-   `opencv-ios-<version>-<arch>-v3`; later runs restore it and skip straight to the app build.
+   Every one of those was in the build *harness*, not in OpenCV or in the app. The framework itself
+   has now been produced successfully, twice.
+
+   It is about twenty minutes of work, so the workflow caches it under
+   `opencv-ios-<version>-<arch>-v4`. The cache is an explicit restore step plus a save step that runs
+   as soon as the framework exists, because `actions/cache` does not write its entry when the job
+   fails — which is why no cache existed despite the framework having been built.
 2. **The plugin compiles.** Swift/ObjC++ interop across the `include/` header, the
    `FlutterPlatformViewFactory` signatures and the `AVCaptureConnection.videoRotationAngle`
    availability branch are all unexercised.
