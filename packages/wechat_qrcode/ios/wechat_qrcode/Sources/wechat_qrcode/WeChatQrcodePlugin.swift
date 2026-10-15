@@ -59,7 +59,9 @@ public class WeChatQrcodePlugin: NSObject, FlutterPlugin {
 
     // MARK: - Method calls
 
-    private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    // `public` because it satisfies a requirement of the public FlutterPlugin
+    // protocol; a more restrictive access level is a compile error.
+    public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
         case "initialize":
             initialize(result: result)
@@ -91,7 +93,9 @@ public class WeChatQrcodePlugin: NSObject, FlutterPlugin {
             result(Self.cameraAuthorization() == .authorized)
         case "release":
             controller.stopScanning()
-            WeChatQRCodeEngine.releaseEngine()
+            // Swift prunes the trailing "Engine" from `releaseEngine` because it
+            // repeats the class name, so the imported name is `release()`.
+            WeChatQRCodeEngine.release()
             result(nil)
         default:
             result(FlutterMethodNotImplemented)
@@ -112,15 +116,16 @@ public class WeChatQrcodePlugin: NSObject, FlutterPlugin {
         }
 
         workQueue.async {
-            var error: NSError?
-            let ok = WeChatQRCodeEngine.initialize(withModelDirectory: directory, error: &error)
-            DispatchQueue.main.async {
-                if ok {
-                    result(nil)
-                } else {
+            // A trailing NSError** parameter becomes a thrown error in Swift, so
+            // the Objective-C method is called with `try` and no `error:` argument.
+            do {
+                try WeChatQRCodeEngine.initialize(withModelDirectory: directory)
+                DispatchQueue.main.async { result(nil) }
+            } catch {
+                DispatchQueue.main.async {
                     result(FlutterError(
                         code: "modelLoadFailed",
-                        message: error?.localizedDescription ?? "The QR engine failed to start.",
+                        message: error.localizedDescription,
                         details: nil))
                 }
             }
@@ -136,15 +141,14 @@ public class WeChatQrcodePlugin: NSObject, FlutterPlugin {
         }
 
         workQueue.async {
-            var error: NSError?
-            let texts = WeChatQRCodeEngine.detectAndDecodeImage(atPath: path, error: &error)
-            DispatchQueue.main.async {
-                if let error, texts.isEmpty {
+            do {
+                let texts = try WeChatQRCodeEngine.detectAndDecodeImage(atPath: path)
+                DispatchQueue.main.async { result(texts) }
+            } catch {
+                DispatchQueue.main.async {
                     result(FlutterError(
                         code: "invalidImage",
                         message: error.localizedDescription, details: nil))
-                } else {
-                    result(texts)
                 }
             }
         }
@@ -210,10 +214,13 @@ public class WeChatQrcodePlugin: NSObject, FlutterPlugin {
         bundles.append(Bundle.module)
         #endif
 
-        bundles.append(Bundle(for: WeChatQrcodePlugin.self))
-        if let resourceBundle = Bundle(
-            url: Bundle(for: WeChatQrcodePlugin.self).resourceURL?
-                .appendingPathComponent("wechat_qrcode.bundle"))
+        let ownBundle = Bundle(for: WeChatQrcodePlugin.self)
+        bundles.append(ownBundle)
+        // The resource bundle CocoaPods produces sits next to the framework.
+        // `Bundle(url:)` takes a non-optional URL, so both steps are unwrapped.
+        if let resourceURL = ownBundle.resourceURL,
+           let resourceBundle = Bundle(
+               url: resourceURL.appendingPathComponent("wechat_qrcode.bundle"))
         {
             bundles.append(resourceBundle)
         }

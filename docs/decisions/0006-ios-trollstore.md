@@ -148,9 +148,25 @@ Nothing below has been checked:
    `opencv-ios-<version>-<arch>-v4`. The cache is an explicit restore step plus a save step that runs
    as soon as the framework exists, because `actions/cache` does not write its entry when the job
    fails — which is why no cache existed despite the framework having been built.
-2. **The plugin compiles.** Swift/ObjC++ interop across the `include/` header, the
-   `FlutterPlatformViewFactory` signatures and the `AVCaptureConnection.videoRotationAngle`
-   availability branch are all unexercised.
+2. **The plugin compiles.** Partly verified, 2026-10-15: the toolchain now reaches the Swift
+   compiler and it reported eight errors in this plugin's own sources, all since fixed—
+
+   * `AVCaptureVideoPreviewLayer.autoresizingMask` does not exist on iOS, and neither do
+     `layerWidthSizable` / `layerHeightSizable`. The preview layer is now the backing layer of a
+     `UIView` subclass (`layerClass` override), which is the documented way to host it and needs no
+     layout code at all;
+   * a trailing `NSError **` parameter is imported by Swift as `throws`, so `initialize(withModelDirectory:error:)`
+     and `detectAndDecodeImage(atPath:error:)` take no `error:` argument and are called with `try`;
+   * `releaseEngine` is imported as `release()` — Swift prunes the trailing component that repeats
+     the class name;
+   * `detectAndDecodePixelBuffer:rotationDegrees:` takes its first argument unlabelled;
+   * `handle(_:result:)` must be `public` to satisfy the public `FlutterPlugin` protocol;
+   * `Bundle(url:)` takes a non-optional `URL`, so the resource bundle lookup needed unwrapping.
+
+   Every call site was then checked against the Objective-C header rather than fixed reactively; the
+   five declared methods and all seven of their uses now agree. Whether the code is also *correct*
+   at runtime is still open — compiling is not running, and none of the camera, focus, torch or
+   frame-analysis paths have executed.
 3. **Resources resolve at runtime.** `modelsDirectory()` probes several bundles; which one actually
    holds `models/` under CocoaPods versus SPM has not been observed.
 4. **Camera and decoding work on device**, including rotation handling and the torch.

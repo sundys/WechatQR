@@ -28,11 +28,13 @@ import UIKit
 /// avoids hand-written NV21 maths on this side.
 final class ScannerPlatformView: NSObject, FlutterPlatformView {
 
-    private let container: UIView
+    private let container = ScannerPreviewView()
     private let controller: ScannerController
 
     private let session = AVCaptureSession()
-    private let previewLayer = AVCaptureVideoPreviewLayer()
+
+    /// The view's own backing layer, so it tracks the view's bounds.
+    private var previewLayer: AVCaptureVideoPreviewLayer { container.previewLayer }
     private let sessionQueue = DispatchQueue(label: "com.sundys.wechat_qrcode.session")
     private let analysisQueue = DispatchQueue(label: "com.sundys.wechat_qrcode.analysis")
 
@@ -48,15 +50,11 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
 
     init(controller: ScannerController) {
         self.controller = controller
-        self.container = ScannerPreviewView()
 
         super.init()
 
         previewLayer.session = session
         previewLayer.videoGravity = .resizeAspectFill
-        previewLayer.frame = container.bounds
-        previewLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        container.layer.addSublayer(previewLayer)
 
         controller.attach(self)
     }
@@ -232,8 +230,10 @@ extension ScannerPlatformView: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-        let decoded = WeChatQRCodeEngine.detectAndDecode(
-            pixelBuffer: pixelBuffer,
+        // The Objective-C selector is `detectAndDecodePixelBuffer:rotationDegrees:`,
+        // so the first argument carries no label of its own.
+        let decoded = WeChatQRCodeEngine.detectAndDecodePixelBuffer(
+            pixelBuffer,
             rotationDegrees: Int32(rotationDegrees(for: connection)))
 
         guard !decoded.isEmpty else { return }
@@ -241,7 +241,17 @@ extension ScannerPlatformView: AVCaptureVideoDataOutputSampleBufferDelegate {
     }
 }
 
-/// A plain view whose layer is kept in sync with the preview layer's frame.
+/// A view whose backing layer *is* the capture preview layer.
+///
+/// Hosting the layer this way, instead of adding an `AVCaptureVideoPreviewLayer`
+/// to a plain view's layer tree, is what lets it follow the view's bounds with no
+/// layout code at all: `CALayer.autoresizingMask` is not available on iOS, so a
+/// manually added layer would have to be resized by hand on every layout pass.
 private final class ScannerPreviewView: UIView {
-    override class var layerClass: AnyClass { CALayer.self }
+    override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
+
+    var previewLayer: AVCaptureVideoPreviewLayer {
+        // Guaranteed by `layerClass` above.
+        layer as! AVCaptureVideoPreviewLayer
+    }
 }
