@@ -158,6 +158,23 @@ jobs:
               || { echo "::error::QR model $model is missing from $out"; exit 1; }
           done
 
+          # The permission list of a release artifact is not visible to any test:
+          # Flutter declares INTERNET only in the debug and profile manifests, so a
+          # release build silently ships without it and every request fails before it
+          # leaves the device. That shipped once; this is what notices next time.
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          aapt2=$(ls -1 "$sdk"/build-tools/*/aapt2 2>/dev/null | sort -V | tail -1)
+          if [[ -z "$aapt2" ]]; then
+            echo "::warning::aapt2 was not found, so the INTERNET permission went unchecked."
+          else
+            if "$aapt2" dump permissions "$out" | grep -q "android.permission.INTERNET"; then
+              echo "INTERNET permission verified."
+            else
+              echo "::error::$out does not declare android.permission.INTERNET, so every network call in this build - the update check included - would fail."
+              exit 1
+            fi
+          fi
+
           echo "Built $out ($(stat -c%s "$out") bytes)."
 
       # Publishing happens here rather than in a separate job so that the APK
