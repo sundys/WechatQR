@@ -26,8 +26,9 @@
 #   the sources rather than a hard-coded list of names.
 #
 #   Note that the closure is larger than the five modules the module itself
-#   names — `objdetect` pulls in `calib3d`, which pulls in `features2d` and
-#   `flann`. Those are genuine requirements, not padding.
+#   names. `objdetect` pulls in `calib3d`, which pulls in `features2d` and
+#   `flann`, and `core` itself pulls in `cudev` — verified against the real
+#   4.12.0 sources. Those are genuine requirements, not padding.
 #
 # Requirements: macOS with Xcode command line tools, cmake >= 3.20, python3.
 #

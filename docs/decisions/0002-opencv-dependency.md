@@ -25,8 +25,8 @@ Notably `imgcodecs` is *not* required: neither implementation decodes image file
 (Android uses `BitmapFactory`, iOS uses `UIImage`), which is why gallery decoding does not pull that
 module in.
 
-The `ocv_define_module` line is not the whole closure. The module's own `CMakeLists.txt` sits inside
-OpenCV and its real dependencies cascade:
+The `ocv_define_module` line is not the whole closure. Every module sits inside OpenCV with its own
+dependencies, and those cascade. Read from the 4.12.0 sources:
 
 ```
 wechat_qrcode → core, imgproc, objdetect, dnn
@@ -34,12 +34,20 @@ objdetect     → core, imgproc, calib3d, dnn
 calib3d       → core, imgproc, features2d, flann
 features2d    → core, imgproc, flann
 flann         → core
+dnn           → core, imgproc
+core          → cudev
 ```
 
-Read from the 4.12.0 sources, the closure is therefore **core, imgproc, objdetect, dnn, calib3d,
-features2d, flann, wechat_qrcode** — eight modules, not five. This was found by parsing the
-declarations rather than assuming the five names were sufficient; `scripts/build_opencv_ios.sh`
-computes the same closure at build time for exactly this reason.
+The closure is therefore **nine** modules, not the five the module names:
+
+```
+core  cudev  imgproc  objdetect  dnn  calib3d  features2d  flann  wechat_qrcode
+```
+
+`core` depending on `cudev` is the easy one to miss — it is the reason a hand-written list of five
+names is not enough. `scripts/build_opencv_ios.sh` computes this closure from the declarations at
+build time for exactly that reason, and the Android minimal-build option described below would need
+the same nine.
 
 ## Decision — Android
 
