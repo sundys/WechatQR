@@ -83,29 +83,51 @@ public class PlatformServicesPlugin: NSObject, FlutterPlugin {
 
         // Add-only access is requested by the system the first time; the app never
         // reads the user's library.
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-            guard status == .authorized || status == .limited else {
-                DispatchQueue.main.async {
-                    result(FlutterError(
-                        code: "permissionDenied",
-                        message: "Photo library access was denied.", details: nil))
-                }
-                return
+        //
+        // `for:` and the `.limited` status both arrived in iOS 14, and this plugin
+        // declares iOS 13, so the older API is used below that. It has no add-only
+        // variant, and asking for add-or-read access is the closest equivalent a
+        // save can use.
+        if #available(iOS 14, *) {
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+                self.writeToLibrary(
+                    image,
+                    granted: status == .authorized || status == .limited,
+                    result: result)
             }
+        } else {
+            PHPhotoLibrary.requestAuthorization { status in
+                self.writeToLibrary(
+                    image, granted: status == .authorized, result: result)
+            }
+        }
+    }
 
-            PHPhotoLibrary.shared().performChanges {
-                PHAssetCreationRequest.creationRequestForAsset(from: image)
-            } completionHandler: { success, error in
-                DispatchQueue.main.async {
-                    if success {
-                        result(nil)
-                    } else {
-                        result(FlutterError(
-                            code: "saveFailed",
-                            message: error?.localizedDescription
-                                ?? "The image could not be saved.",
-                            details: nil))
-                    }
+    /// Writes the image once access has been settled, whatever route granted it.
+    private func writeToLibrary(
+        _ image: UIImage, granted: Bool, result: @escaping FlutterResult
+    ) {
+        guard granted else {
+            DispatchQueue.main.async {
+                result(FlutterError(
+                    code: "permissionDenied",
+                    message: "Photo library access was denied.", details: nil))
+            }
+            return
+        }
+
+        PHPhotoLibrary.shared().performChanges {
+            PHAssetCreationRequest.creationRequestForAsset(from: image)
+        } completionHandler: { success, error in
+            DispatchQueue.main.async {
+                if success {
+                    result(nil)
+                } else {
+                    result(FlutterError(
+                        code: "saveFailed",
+                        message: error?.localizedDescription
+                            ?? "The image could not be saved.",
+                        details: nil))
                 }
             }
         }
