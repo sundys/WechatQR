@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The only path the installer can read from: <filesDir>/updates, which is where
+  ApkDownloader writes a verified update package. Nothing else in app storage is
+  reachable through this provider.
+-->
+<paths>
+    <files-path
+        name="updates"
+        path="updates/" />
+</paths>

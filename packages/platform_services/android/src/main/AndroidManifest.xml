@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Short scan-success feedback. Not required: devices without a vibrator
+         simply ignore it. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Needed to launch the system package installer. The user still has to
+         grant "install unknown apps" in system settings and confirm each
+         installation; nothing is installed silently. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Saving a generated QR image on Android 9 and below. Android 10+ writes
+         through MediaStore and needs no storage permission at all, so this is
+         capped at the last API level that requires it. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <application>
+        <!--
+          Exposes exactly one directory — the app-private `updates` folder — so a
+          downloaded APK can be handed to the installer by content URI without
+          granting it broad file access.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/platform_services_file_paths" />
+        </provider>
+    </application>
+
+</manifest>

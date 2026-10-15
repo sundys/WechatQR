@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Live scanning needs the camera. The feature is declared as not required so
+      the app stays installable on devices without one, where gallery decoding is
+      still available; the UI reports a clear error if the camera cannot be
+      opened.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
+
+</manifest>

@@ -1,0 +1,93 @@
+WeChatQR
+Copyright 2025 WeChatQR project contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It bundles or links against the following third-party components. Each entry
+records what is used and the licence it is used under, verified against the
+component's own licence file.
+
+===========================================================================
+1. WeChatQRCode — vendored source
+===========================================================================
+Source:    https://github.com/jenly1314/WeChatQRCode (version 2.6.0)
+Modules:   wechat-qrcode, wechat-qrcode-scanning
+Licence:   Apache License 2.0
+Copyright: Copyright (C) Jenly Yu (jenly1314)
+
+Files vendored into this repository, under
+packages/wechat_qrcode/android/src/main/kotlin/com/king/wechat/qrcode/:
+
+  DecodeResult.kt                 — unmodified
+  Extensions.kt                   — unmodified
+  WeChatQRCodeDetector.kt         — MODIFIED (see the notice at the top of the
+                                    file: explicit initialisation failure,
+                                    models extracted into internal storage,
+                                    synchronised idempotent init, explicit
+                                    OpenCV load, leak-free stream handling)
+  scanning/analyze/WeChatScanningAnalyzer.kt — unmodified
+
+The iOS implementation is an independent wrapper around the same OpenCV API and
+contains no code from the above project.
+
+===========================================================================
+2. WeChat QRCode engine and CNN models
+===========================================================================
+Source:    WeChat Computer Vision Team (WeChatCV), obtained through
+           opencv_contrib/modules/wechat_qrcode and
+           https://github.com/WeChatCV/opencv_3rdparty
+Licence:   Apache License 2.0
+Copyright: Copyright (C) 2021 THL A29 Limited, a Tencent company. All rights
+           reserved. The below software in this distribution may have been
+           modified by THL A29 Limited ("Tencent Modifications"). All Tencent
+           Modifications are Copyright (C) THL A29 Limited.
+
+Third-party components listed by that project's LICENSE: zxing
+(Copyright (c) zxing authors and contributors, Apache License 2.0).
+
+The four model files are redistributed with this application and are
+byte-identical to the upstream release at
+WeChatCV/opencv_3rdparty commit a8b69ccc738421293254aec5ddb38bd523503252:
+
+  detect.caffemodel   MD5 238e2b2d6f3c18d6c3a30de0c31e23cf
+  detect.prototxt     MD5 6fb4976b32695f9f5c6305c19f12537d
+  sr.caffemodel       MD5 cbfcd60361a73beb8c583eea7e8e6664
+  sr.prototxt         MD5 69db99927a70df953b471daaba03fbef
+
+===========================================================================
+3. OpenCV
+===========================================================================
+Version:   4.12.0
+Licence:   Apache License 2.0
+Copyright: Copyright (C) OpenCV Foundation
+
+Used only as the dependency of the WeChat QRCode engine. The modules exercised
+are exactly those that opencv_contrib's wechat_qrcode module declares:
+core, imgproc, objdetect, dnn. No other OpenCV module or general-purpose OpenCV
+API is called anywhere in this project.
+
+On Android the OpenCV Java bindings and the prebuilt libopencv_java4.so are
+consumed as published Maven artifacts
+(com.github.jenly1314.WeChatQRCode:opencv and :opencv-armv64). On iOS a minimal
+opencv2.xcframework is built from source by scripts/build_opencv_ios.sh with
+BUILD_LIST limited to those same modules.
+
+===========================================================================
+4. Android support libraries and Flutter plugins
+===========================================================================
+CameraScan 1.5.0                       Apache-2.0  (C) Jenly Yu
+LogX 1.3.0                             Apache-2.0  (C) Jenly Yu
+androidx.core (core-ktx 1.13.1)        Apache-2.0  (C) The Android Open Source
+                                                   Project
+
+Flutter 3.44.5                         BSD-3-Clause (C) The Flutter Authors
+qr_flutter 4.1.0 / qr 3.0.2            BSD-3-Clause (C) Luke Freeman;
+                                                    the Dart QR project authors
+image_picker, url_launcher,            BSD-3-Clause (C) The Flutter Authors
+shared_preferences, path_provider,
+plugin_platform_interface
+share_plus, package_info_plus          BSD-3-Clause (C) the Flutter project
+                                                    authors / Chromium Authors
+http, crypto                           BSD-3-Clause (C) the Dart project authors
+
+Full licence texts are reproduced in docs/licenses/.

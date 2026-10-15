@@ -1,0 +1,12 @@
+# Model files must keep their exact upstream bytes: OpenCV's caffe parser is
+# byte-sensitive for the prototxt, and the caffemodel MD5s are the provenance
+# check recorded in docs/decisions/0003-model-licensing.md.
+*.prototxt  -text
+*.caffemodel -text
+
+# Native libraries, when vendored for iOS builds
+*.so        -text
+*.a         -text
+
+# Keep shell scripts LF so they stay runnable on the macOS builder
+*.sh        text eol=lf

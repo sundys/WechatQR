@@ -1,0 +1,49 @@
+name: wechatqr
+description: "Cross-platform QR code app (Android + iOS/TrollStore) powered by OpenCV's WeChatQRCode engine."
+publish_to: 'none'
+
+# Read by package_info_plus at runtime and by the update flow to decide whether
+# a release is newer. Never hardcode this in UI code (project spec §8.4).
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Local plugin wrapping the native WeChatQRCode engine (vendored from
+  # jenly1314/WeChatQRCode, Apache-2.0). See docs/decisions/.
+  wechat_qrcode:
+    path: ../packages/wechat_qrcode
+
+  # Local plugin for device capabilities that need native code.
+  platform_services:
+    path: ../packages/platform_services
+
+  cupertino_icons: ^1.0.8
+
+  # QR generation (BSD-3-Clause). Rendering only; the recognition engine is the
+  # native plugin above, never this package.
+  qr_flutter: ^4.1.0
+
+  # Platform capability adapters (all BSD-3-Clause / Apache-2.0).
+  image_picker: ^1.2.4      # system photo picker for gallery decoding
+  url_launcher: ^6.3.3      # Chrome Custom Tabs / system browser
+  share_plus: ^13.3.1       # sharing a generated QR image
+  package_info_plus: ^10.2.2  # version from package metadata
+  path_provider: ^2.1.6     # app-private storage for history and APKs
+  shared_preferences: ^2.5.6  # settings persistence
+
+  # Networking for the GitHub release check and APK download (BSD-3-Clause).
+  http: ^1.6.0
+  crypto: ^3.0.6            # SHA-256 verification of a downloaded APK
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

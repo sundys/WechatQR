@@ -1,0 +1,116 @@
+name: CI
+
+# Fast feedback on every change: formatting, static analysis and the unit test
+# suite. Building installable artifacts is the release workflow's job.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.44.5'
+  JAVA_VERSION: '17'
+
+jobs:
+  analyze-and-test:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        working-directory: app
+        run: |
+          set -euo pipefail
+          flutter pub get
+          (cd ../packages/wechat_qrcode && flutter pub get)
+          (cd ../packages/platform_services && flutter pub get)
+
+      - name: Check formatting
+        working-directory: app
+        run: |
+          set -euo pipefail
+          dart format --output=none --set-exit-if-changed \
+            lib test \
+            ../packages/wechat_qrcode/lib \
+            ../packages/platform_services/lib
+
+      - name: Analyze
+        working-directory: app
+        run: |
+          set -euo pipefail
+          flutter analyze
+          (cd ../packages/wechat_qrcode && flutter analyze)
+          (cd ../packages/platform_services && flutter analyze)
+
+      - name: Test
+        working-directory: app
+        run: flutter test
+
+  # Keeps the Android build honest on every change: the plugin compiles against
+  # the real OpenCV and CameraX artifacts, and the APK can only contain ABIs the
+  # OpenCV native library exists for.
+  android-build:
+    name: Android debug build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Build debug APK
+        working-directory: app
+        run: flutter build apk --debug --target-platform android-arm64
+
+      - name: Verify the APK carries the engine and its models
+        working-directory: app
+        run: |
+          set -euo pipefail
+          apk=build/app/outputs/flutter-apk/app-debug.apk
+          unzip -l "$apk" | grep -q 'lib/arm64-v8a/libopencv_java4.so' \
+            || { echo "::error::libopencv_java4.so is missing from the APK"; exit 1; }
+          for model in detect.caffemodel detect.prototxt sr.caffemodel sr.prototxt; do
+            unzip -l "$apk" | grep -q "assets/models/$model" \
+              || { echo "::error::QR model $model is missing from the APK"; exit 1; }
+          done
+          echo "APK contents verified."

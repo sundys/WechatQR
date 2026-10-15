@@ -1,0 +1,50 @@
+# Local WeChatQRCode source/reference checkout; never push to remote
+/WeChatQRCode/
+
+# --- Flutter / Dart ---
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/build/
+app/.packages
+packages/**/.dart_tool/
+packages/**/.packages
+**/.pub-cache/
+**/pubspec.lock.bak
+
+# --- Android ---
+**/android/.gradle/
+**/android/local.properties
+**/android/key.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+**/android/.cxx/
+*.jks
+*.keystore
+
+# --- iOS / macOS ---
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Runner.xcworkspace/
+**/ios/Runner.xcodeproj/xcuserdata/
+**/ios/Runner.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcframework/
+!**/ios/**/default.mode1v3
+!**/ios/**/default.pbxuser
+
+# --- IDE / OS ---
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Local build outputs / secrets ---
+*.log
+/artifacts/
+scripts/opencv-ios-build/
