@@ -459,4 +459,117 @@ void main() {
       expect(AppConfig.selectAndroidAsset(release), isNull);
     });
   });
+
+  group('mirrors', () {
+    test('try every mirror before the original address', () {
+      final original = Uri.parse('https://api.github.com/repos/o/r/releases');
+      final candidates = AppConfig.candidateUrls(
+        original,
+        AppConfig.githubApiMirrors,
+      );
+
+      expect(candidates.last, original, reason: 'the original must be last');
+      expect(candidates.length, AppConfig.githubApiMirrors.length + 1);
+    });
+
+    test('substitute the address into a prefix template', () {
+      const original = 'https://github.com/o/r/releases/download/v1/a.apk';
+      final candidates = AppConfig.candidateUrls(
+        Uri.parse(original),
+        const <String>['https://gh-proxy.com/{url}'],
+      );
+
+      expect(candidates.first.toString(), 'https://gh-proxy.com/$original');
+    });
+
+    test('substitute the address into a query template', () {
+      const original = 'https://api.github.com/repos/o/r/releases';
+      final candidates = AppConfig.candidateUrls(
+        Uri.parse(original),
+        const <String>['https://github.akams.cn/?url={url}'],
+      );
+
+      expect(
+        candidates.first.toString(),
+        'https://github.akams.cn/?url=$original',
+      );
+    });
+
+    test('keep the shapes these mirrors were verified with', () {
+      // Each was exercised against the real release before being listed, and
+      // they are not interchangeable: ghfast.top forwards downloads but answers
+      // the API with 403, and github.akams.cn takes the address as a parameter.
+      expect(
+        AppConfig.githubApiMirrors,
+        contains('https://gh-proxy.com/{url}'),
+      );
+      expect(
+        AppConfig.githubDownloadMirrors,
+        contains('https://ghfast.top/{url}'),
+      );
+      expect(
+        AppConfig.githubDownloadMirrors,
+        contains('https://github.akams.cn/?url={url}'),
+      );
+      expect(
+        AppConfig.githubApiMirrors,
+        isNot(contains('https://ghfast.top/{url}')),
+      );
+    });
+
+    test('fall through a dead mirror to a working address', () async {
+      final hosts = <String>[];
+      final service = GitHubReleaseService(
+        enabled: true,
+        endpoint: Uri.parse('https://api.github.com/repos/o/r/releases'),
+        client: MockClient((request) async {
+          hosts.add(request.url.host);
+          if (request.url.host != 'api.github.com') {
+            throw const SocketException('mirror unreachable');
+          }
+          return http.Response(releasesJson([releaseJson(tag: 'v1.1.0')]), 200);
+        }),
+      );
+
+      final release = await service.latestStable();
+
+      expect(release?.tagName, 'v1.1.0');
+      expect(hosts.length, AppConfig.githubApiMirrors.length + 1);
+      expect(hosts.last, 'api.github.com');
+    });
+
+    test('report a network failure when nothing is reachable', () async {
+      final service = GitHubReleaseService(
+        enabled: true,
+        endpoint: Uri.parse('https://api.github.com/repos/o/r/releases'),
+        client: MockClient((_) async => throw const SocketException('offline')),
+      );
+
+      await expectLater(
+        service.latestStable(),
+        throwsA(
+          isA<ReleaseCheckException>().having(
+            (e) => e.failure,
+            'failure',
+            ReleaseCheckFailure.networkUnavailable,
+          ),
+        ),
+      );
+    });
+
+    test('a mirror serving nonsense falls through as well', () async {
+      final service = GitHubReleaseService(
+        enabled: true,
+        endpoint: Uri.parse('https://api.github.com/repos/o/r/releases'),
+        client: MockClient((request) async {
+          if (request.url.host != 'api.github.com') {
+            return http.Response('<html>proxy error</html>', 200);
+          }
+          return http.Response(releasesJson([releaseJson(tag: 'v1.2.0')]), 200);
+        }),
+      );
+
+      expect((await service.latestStable())?.tagName, 'v1.2.0');
+    });
+  });
 }

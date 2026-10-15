@@ -107,6 +107,35 @@ The workflow asserts the properties this decision depends on, rather than trusti
 release APK must contain `lib/arm64-v8a/libopencv_java4.so` and the four models, and must contain no
 other ABI.
 
+## Reaching GitHub where it is blocked
+
+The release check and the package download both go through GitHub, which is unreachable on some
+networks. `AppConfig` therefore lists forwarders and tries them in order, with **GitHub's own address
+last** so a working connection never routes through a third party:
+
+```
+https://gh-proxy.com/{url}          API and downloads
+https://ghfast.top/{url}            downloads only - it answers the API with 403
+https://github.akams.cn/?url={url}  API and downloads, as a query parameter
+```
+
+Each was exercised against this repository's real v1.0.2 release before being listed: the API forms
+returned the release JSON, and the download forms returned the `.apk` with a SHA-256 matching
+GitHub's published digest. They are not interchangeable, which is why the shapes are recorded here
+and asserted in `test/services/release_service_test.dart`.
+
+A failed candidate falls through to the next. That includes a failed digest or length check: a
+forwarder that answers `200` with the wrong bytes is exactly the case the next address should cover.
+Only a cancellation or an oversized asset stops the sequence, since neither is something another
+address can fix.
+
+**What actually protects the update.** The digest is fetched from the same API, possibly through the
+same forwarder, so it is not an independent check — a forwarder that tampered with an APK could
+tamper with the digest that describes it. The real protection is Android's own: the system installer
+verifies that an update is signed by the same key as the installed application, so a package signed
+by anyone else is refused. Verifying the digest and length still catches truncation and corruption,
+which is what they are good for, and they are documented as such rather than as a security boundary.
+
 ## Not verified
 
 * No check has been run against a live release, because no release exists yet.

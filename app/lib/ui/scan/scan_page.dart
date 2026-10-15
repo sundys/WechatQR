@@ -78,7 +78,14 @@ class _ScanPageState extends State<ScanPage> {
     }
 
     if (!widget.isActive) {
-      await scan.stopScanning();
+      // Paused, not stopped. Releasing the camera here meant re-acquiring it on
+      // the way back, and the preview showed black for as long as that took —
+      // the flicker seen when switching tabs. Keeping the camera open behind the
+      // other tabs shows a live preview the instant the scan tab returns.
+      //
+      // The spec asks for the camera to be paused when this page is left, and
+      // reserves releasing it for backgrounding; AppShell does that.
+      await scan.pauseScanning();
       return;
     }
 
@@ -102,7 +109,12 @@ class _ScanPageState extends State<ScanPage> {
       _hasCameraPermission = granted;
     });
 
-    if (granted) {
+    if (!granted) {
+      return;
+    }
+    if (scan.isScanning) {
+      await scan.resumeScanning();
+    } else {
       await scan.startScanning();
     }
   }
@@ -257,6 +269,31 @@ class _ScanPageState extends State<ScanPage> {
     );
   }
 
+  /// The engine error to surface over the preview, if any.
+  ///
+  /// Permission problems are excluded: they have their own panel, which offers
+  /// the system settings route the user actually needs.
+  WeChatQrCodeException? get _runtimeCameraError {
+    final error = _scan?.engineError;
+    if (error == null || error.isPermissionProblem) {
+      return null;
+    }
+    return error;
+  }
+
+  /// Retries the camera after a failed start.
+  Future<void> _retryCamera() async {
+    final scan = _scan;
+    if (scan == null) {
+      return;
+    }
+    await scan.startScanning();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _hasCameraPermission = scan.isScanning);
+  }
+
   Widget _buildScanner(ScanController scan) {
     return Stack(
       fit: StackFit.expand,
@@ -314,6 +351,22 @@ class _ScanPageState extends State<ScanPage> {
             child: Padding(
               padding: EdgeInsets.all(24),
               child: _ScanStatusChip(label: '正在准备相机…'),
+            ),
+          ),
+
+        // A camera that failed to start used to leave a black screen and nothing
+        // else: the error was recorded but only the engine-initialisation panel
+        // ever displayed one, and that panel is not shown once the engine is
+        // ready. Surfacing it over the preview turns an unexplained black screen
+        // into something the user can act on.
+        if (_runtimeCameraError != null)
+          Positioned(
+            left: 20,
+            right: 20,
+            top: 64,
+            child: _CameraErrorBanner(
+              message: ErrorMessages.forEngine(_runtimeCameraError!),
+              onRetry: () => unawaited(_retryCamera()),
             ),
           ),
 
@@ -664,6 +717,39 @@ class _SelectionHint extends StatelessWidget {
                 style: theme.textTheme.bodySmall,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown over the preview when the camera failed to start.
+class _CameraErrorBanner extends StatelessWidget {
+  const _CameraErrorBanner({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.errorContainer,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+        child: Row(
+          children: [
+            Icon(Icons.videocam_off, color: theme.colorScheme.onErrorContainer),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(color: theme.colorScheme.onErrorContainer),
+              ),
+            ),
+            TextButton(onPressed: onRetry, child: const Text('重试')),
           ],
         ),
       ),

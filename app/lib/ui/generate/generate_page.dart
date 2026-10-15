@@ -54,7 +54,17 @@ class _GeneratePageState extends State<GeneratePage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// Ends text entry before an action runs.
+  ///
+  /// Tapping any of the three actions should also close the keyboard. Otherwise
+  /// it keeps covering the lower half of a small phone — hiding the very QR code
+  /// the user just asked for — and the field stays focused behind the result.
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
+
   Future<void> _pasteFromClipboard() async {
+    _dismissKeyboard();
     // The clipboard is read only on this explicit user action (project spec §11).
     final String? text;
     try {
@@ -80,6 +90,7 @@ class _GeneratePageState extends State<GeneratePage> {
   }
 
   void _generate() {
+    _dismissKeyboard();
     final text = _input.text;
     if (text.trim().isEmpty) {
       _notify('请输入要生成二维码的内容');
@@ -102,6 +113,7 @@ class _GeneratePageState extends State<GeneratePage> {
   }
 
   void _clear() {
+    _dismissKeyboard();
     _input.clear();
     setState(() {
       _generatedData = null;
@@ -227,26 +239,27 @@ class _GeneratePageState extends State<GeneratePage> {
                   Row(
                     children: [
                       Expanded(
-                        child: OutlinedButton.icon(
+                        child: _ActionButton(
+                          icon: Icons.content_paste,
+                          label: '粘贴',
                           onPressed: _pasteFromClipboard,
-                          icon: const Icon(Icons.content_paste),
-                          label: const Text('粘贴'),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Expanded(
-                        child: FilledButton.icon(
+                        child: _ActionButton(
+                          icon: Icons.qr_code_2,
+                          label: '生成',
                           onPressed: _generate,
-                          icon: const Icon(Icons.qr_code_2),
-                          label: const Text('生成'),
+                          filled: true,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Expanded(
-                        child: OutlinedButton.icon(
+                        child: _ActionButton(
+                          icon: Icons.backspace_outlined,
+                          label: '清空',
                           onPressed: _clear,
-                          icon: const Icon(Icons.backspace_outlined),
-                          label: const Text('清空'),
                         ),
                       ),
                     ],
@@ -275,6 +288,60 @@ class _GeneratePageState extends State<GeneratePage> {
         ],
       ),
     );
+  }
+}
+
+/// One of the three actions under the input.
+///
+/// Built from a plain button and an explicit row rather than
+/// `OutlinedButton.icon`, so the padding, icon gap and text metrics can be
+/// tightened. At the defaults an icon plus a two-character label needs more room
+/// than a 320 pt screen gives each of three buttons, and the label wraps with its
+/// characters stacked vertically.
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.filled = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = ButtonStyle(
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+      ),
+      visualDensity: VisualDensity.compact,
+      tapTargetSize: MaterialTapTargetSize.padded,
+    );
+
+    final child = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 6),
+        // `softWrap: false` is the guarantee: the label never breaks, whatever
+        // the width, so the characters can never stack.
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+
+    return filled
+        ? FilledButton(onPressed: onPressed, style: style, child: child)
+        : OutlinedButton(onPressed: onPressed, style: style, child: child);
   }
 }
 

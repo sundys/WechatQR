@@ -142,8 +142,61 @@ class ApkDownloader {
   ///
   /// [onProgress] receives bytes written and the expected total when known.
   /// Throws [UpdateDownloadException]; nothing is left on disk when it throws.
+  /// Downloads [asset], trying a forwarder first where GitHub is unreachable.
+  ///
+  /// Candidates come from [AppConfig.candidateUrls], with the release's own
+  /// address last, so a working connection to GitHub is never routed through a
+  /// third party. A failure that another address could plausibly fix moves on to
+  /// the next one — including a checksum or length mismatch, since a mirror
+  /// serving damaged bytes is exactly the case the next candidate should cover.
   Future<DownloadedApk> download(
     ReleaseAsset asset, {
+    required ReleaseInfo release,
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+    DownloadCancelToken? cancelToken,
+  }) async {
+    UpdateDownloadException? lastFailure;
+
+    for (final url in AppConfig.candidateUrls(
+      asset.downloadUrl,
+      AppConfig.githubDownloadMirrors,
+    )) {
+      if (cancelToken?.isCancelled ?? false) {
+        throw const UpdateDownloadException(
+          UpdateDownloadFailure.cancelled,
+          'The download was cancelled.',
+        );
+      }
+      try {
+        return await _downloadFrom(
+          asset,
+          url,
+          release: release,
+          onProgress: onProgress,
+          cancelToken: cancelToken,
+        );
+      } on UpdateDownloadException catch (error) {
+        // Both of these are about the release or the user, not about the
+        // address, so another candidate cannot help.
+        if (error.failure == UpdateDownloadFailure.cancelled ||
+            error.failure == UpdateDownloadFailure.tooLarge) {
+          rethrow;
+        }
+        lastFailure = error;
+      }
+    }
+
+    throw lastFailure ??
+        const UpdateDownloadException(
+          UpdateDownloadFailure.network,
+          'The update package could not be downloaded from any address.',
+        );
+  }
+
+  /// One attempt against a single address.
+  Future<DownloadedApk> _downloadFrom(
+    ReleaseAsset asset,
+    Uri downloadUrl, {
     required ReleaseInfo release,
     void Function(int receivedBytes, int? totalBytes)? onProgress,
     DownloadCancelToken? cancelToken,
@@ -168,7 +221,7 @@ class ApkDownloader {
     ByteConversionSink? digestInput;
 
     try {
-      final request = http.Request('GET', asset.downloadUrl);
+      final request = http.Request('GET', downloadUrl);
       request.headers['User-Agent'] = 'WeChatQR-UpdateChecker';
 
       final response = await _client

@@ -63,6 +63,48 @@ abstract final class AppConfig {
   /// stable one.
   static const int releasePageSize = 30;
 
+  // ---------------------------------------------------------------- mirrors
+
+  /// Addresses that forward a request to GitHub, for networks where GitHub is
+  /// unreachable. `{url}` is replaced with the original address.
+  ///
+  /// Each entry was exercised against this repository's real v1.0.2 release
+  /// before being listed: the API templates returned the release JSON, and the
+  /// download templates returned the .apk with a SHA-256 matching the digest
+  /// GitHub publishes for it. They are not interchangeable — `ghfast.top`
+  /// forwards downloads but answers the API with 403, and `github.akams.cn`
+  /// takes the original URL as a query parameter rather than as a prefix.
+  ///
+  /// Candidates are always tried in order and the original address is always
+  /// last, so a network that can reach GitHub directly never has a release
+  /// fetched through a third party.
+  static const List<String> githubApiMirrors = <String>[
+    'https://gh-proxy.com/{url}',
+    'https://github.akams.cn/?url={url}',
+  ];
+
+  static const List<String> githubDownloadMirrors = <String>[
+    'https://gh-proxy.com/{url}',
+    'https://ghfast.top/{url}',
+    'https://github.akams.cn/?url={url}',
+  ];
+
+  /// [url] itself, preceded by every mirror in [mirrors].
+  static List<Uri> candidateUrls(Uri url, List<String> mirrors) {
+    final original = url.toString();
+    return <Uri>[
+      for (final template in mirrors)
+        Uri.parse(template.replaceAll('{url}', original)),
+      url,
+    ];
+  }
+
+  /// How long a single attempt may take before the next address is tried.
+  ///
+  /// Short on purpose: with four candidates the user waits at most four times
+  /// this, and a mirror that is simply down should not hold the check up.
+  static const Duration mirrorAttemptTimeout = Duration(seconds: 10);
+
   /// Matches Android package files. Case-insensitive because asset naming is
   /// up to the release author.
   static final RegExp androidAssetPattern = RegExp(

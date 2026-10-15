@@ -85,11 +85,36 @@ class GitHubReleaseService implements ReleaseService {
       );
     }
 
+    // Mirrors first, the original address last. A network that can reach GitHub
+    // directly therefore still talks to GitHub; one that cannot gets the same
+    // bytes through a forwarder (project spec: the release source must work
+    // where GitHub is unreachable).
+    ReleaseCheckException? lastFailure;
+    for (final endpoint in AppConfig.candidateUrls(
+      _endpoint,
+      AppConfig.githubApiMirrors,
+    )) {
+      try {
+        return await _fetch(endpoint);
+      } on ReleaseCheckException catch (error) {
+        lastFailure = error;
+      }
+    }
+
+    throw lastFailure ??
+        const ReleaseCheckException(
+          ReleaseCheckFailure.networkUnavailable,
+          'The release check could not reach GitHub or any of its mirrors.',
+        );
+  }
+
+  /// One attempt against a single address.
+  Future<ReleaseInfo?> _fetch(Uri endpoint) async {
     final http.Response response;
     try {
       response = await _client
           .get(
-            _endpoint,
+            endpoint,
             headers: const {
               'Accept': 'application/vnd.github+json',
               'X-GitHub-Api-Version': '2022-11-28',
@@ -97,7 +122,13 @@ class GitHubReleaseService implements ReleaseService {
               'User-Agent': 'WeChatQR-UpdateChecker',
             },
           )
-          .timeout(_timeout);
+          // The shorter of the two: a mirror that is down should hand over to the
+          // next candidate rather than holding the check for the full timeout.
+          .timeout(
+            _timeout < AppConfig.mirrorAttemptTimeout
+                ? _timeout
+                : AppConfig.mirrorAttemptTimeout,
+          );
     } on TimeoutException catch (error) {
       throw ReleaseCheckException(
         ReleaseCheckFailure.networkUnavailable,

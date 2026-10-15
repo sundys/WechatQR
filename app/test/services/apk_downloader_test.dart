@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:wechatqr/config/app_config.dart';
 import 'package:wechatqr/domain/release_info.dart';
 import 'package:wechatqr/services/apk_downloader.dart';
 
@@ -282,6 +283,86 @@ void main() {
       // Compared by name because `Directory.list()` yields platform-native
       // separators while the literal above may use '/'.
       expect(pending?.uri.pathSegments.last, 'newer.apk');
+    });
+  });
+
+  group('mirrors', () {
+    test('fall through a dead mirror to a working address', () async {
+      final hosts = <String>[];
+      final downloader = ApkDownloader(
+        updatesDirectoryProvider: () async => tempDir,
+        client: MockClient((request) async {
+          hosts.add(request.url.host);
+          // The asset in these tests lives on example.test; every other host is
+          // one of the configured mirrors.
+          if (request.url.host != 'example.test') {
+            throw const SocketException('mirror unreachable');
+          }
+          return http.Response.bytes(payload, 200);
+        }),
+      );
+
+      final result = await downloader.download(
+        assetFor(sizeBytes: payload.length),
+        release: buildRelease('v1.0.0'),
+      );
+
+      expect(hosts.first, 'gh-proxy.com', reason: 'mirrors go first');
+      expect(hosts.last, 'example.test', reason: 'the original is last');
+      expect(hosts.length, AppConfig.githubDownloadMirrors.length + 1);
+      expect(await File(result.filePath).exists(), isTrue);
+    });
+
+    test(
+      'a mirror serving damaged bytes falls through to a good one',
+      () async {
+        // The case worth covering: a forwarder that answers 200 with the wrong
+        // content is caught by the length check, and the next address is tried.
+        final downloader = ApkDownloader(
+          updatesDirectoryProvider: () async => tempDir,
+          client: MockClient((request) async {
+            if (request.url.host == 'gh-proxy.com') {
+              return http.Response.bytes(utf8.encode('truncated'), 200);
+            }
+            return http.Response.bytes(payload, 200);
+          }),
+        );
+
+        final result = await downloader.download(
+          assetFor(sizeBytes: payload.length),
+          release: buildRelease('v1.0.0'),
+        );
+
+        expect(await File(result.filePath).readAsBytes(), payload);
+      },
+    );
+
+    test('stop at a cancellation instead of trying the next address', () async {
+      final hosts = <String>[];
+      final downloader = ApkDownloader(
+        updatesDirectoryProvider: () async => tempDir,
+        client: MockClient((request) async {
+          hosts.add(request.url.host);
+          return http.Response.bytes(payload, 200);
+        }),
+      );
+
+      await expectLater(
+        downloader.download(
+          assetFor(),
+          release: buildRelease('v1.0.0'),
+          cancelToken: DownloadCancelToken()..cancel(),
+        ),
+        throwsA(
+          isA<UpdateDownloadException>().having(
+            (e) => e.failure,
+            'failure',
+            UpdateDownloadFailure.cancelled,
+          ),
+        ),
+      );
+
+      expect(hosts, isEmpty, reason: 'a cancelled download makes no request');
     });
   });
 }

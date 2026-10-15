@@ -144,8 +144,12 @@ The ABI is part of the APK name so `AppConfig.androidAbiPreference` can match it
 installs an arm64 package on a device it cannot run on. `.github/workflows/release.yml` produces
 exactly these names.
 
-The update flow has still **not** been exercised against a live release — its tests use canned JSON.
-It will be verifiable once the first release exists.
+Where GitHub is unreachable, the check and the download fall through a list of forwarders in
+`AppConfig`, trying GitHub's own address last so a working connection never goes through a third
+party. The forwarders were each verified against a real release before being listed; see
+[ADR-0005](docs/decisions/0005-update-flow.md), which also explains why the digest check is a
+corruption check and that Android's own signature verification is what prevents a substituted
+package from being installed.
 
 ---
 

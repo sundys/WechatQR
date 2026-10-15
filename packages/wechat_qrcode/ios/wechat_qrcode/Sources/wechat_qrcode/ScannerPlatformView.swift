@@ -41,12 +41,16 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
     private var videoOutput: AVCaptureVideoDataOutput?
     private var isConfigured = false
     private var isRunning = false
+    private var runtimeErrorObserver: NSObjectProtocol?
 
     /// Set while a result is on screen; frames are ignored rather than analysed.
     /// The camera stays open so the preview does not flicker.
     private var isAnalyzing = false
 
     private let lock = NSLock()
+
+    /// How many times a start is attempted before the failure is reported.
+    private static let startAttempts = 3
 
     init(controller: ScannerController) {
         self.controller = controller
@@ -56,10 +60,15 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
         previewLayer.session = session
         previewLayer.videoGravity = .resizeAspectFill
 
+        observeRuntimeErrors()
+
         controller.attach(self)
     }
 
     deinit {
+        if let runtimeErrorObserver {
+            NotificationCenter.default.removeObserver(runtimeErrorObserver)
+        }
         controller.detach(self)
     }
 
@@ -67,15 +76,65 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
 
     // MARK: - Session control
 
+    /// Starts, or restarts, the capture session.
+    ///
+    /// Deliberately restartable and verified. The first launch after the
+    /// permission prompt showed a black preview that only relaunching the app
+    /// cleared; a start that quietly does nothing cannot be recovered from, so
+    /// this always attempts the start, checks that the session really came up,
+    /// retries once, and reports the failure to Dart if it still has not. A black
+    /// screen with no explanation is the one outcome that must not happen.
     func start() {
         sessionQueue.async { [weak self] in
-            guard let self else { return }
+            guard let self, !self.disposed else { return }
             if !self.isConfigured {
                 guard self.configureSession() else { return }
             }
-            guard !self.isRunning else { return }
-            self.session.startRunning()
-            self.isRunning = true
+            self.beginRunning(attempt: 1)
+        }
+    }
+
+    private func beginRunning(attempt: Int) {
+        if !session.isRunning {
+            session.startRunning()
+        }
+
+        if session.isRunning {
+            isRunning = true
+            return
+        }
+
+        guard attempt < Self.startAttempts else {
+            isRunning = false
+            controller.onCameraError(
+                code: "cameraUnavailable",
+                message: "The camera did not start. Try again, or reopen the app.")
+            return
+        }
+
+        // `startRunning` can return without the session having started — for
+        // instance when it is called while the app is still becoming active,
+        // which is exactly when the permission prompt has just been dismissed.
+        sessionQueue.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.beginRunning(attempt: attempt + 1)
+        }
+    }
+
+    /// Restarts the session after the system reports a runtime error.
+    ///
+    /// Without this the preview simply freezes, which looks identical to the
+    /// black-screen report and is just as unrecoverable.
+    private func observeRuntimeErrors() {
+        runtimeErrorObserver = NotificationCenter.default.addObserver(
+            forName: .AVCaptureSessionRuntimeError,
+            object: session,
+            queue: nil
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.sessionQueue.async {
+                guard !self.disposed else { return }
+                self.beginRunning(attempt: 1)
+            }
         }
     }
 
