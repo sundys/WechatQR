@@ -91,6 +91,10 @@ public class WeChatQrcodePlugin: NSObject, FlutterPlugin {
             result(nil)
         case "hasCameraPermission":
             result(Self.cameraAuthorization() == .authorized)
+        case "capturePreview":
+            // Answered with null rather than an error: a missing frame costs the
+            // caller a frozen picture, not the scan.
+            result(controller.lastFrame().map { FlutterStandardTypedData(bytes: $0) })
         case "release":
             controller.stopScanning()
             // Swift prunes the trailing "Engine" from `releaseEngine` because it
@@ -253,16 +257,9 @@ extension WeChatQrcodePlugin: FlutterStreamHandler {
         withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink
     ) -> FlutterError? {
         eventSink = events
-        controller.onResults = { texts in
-            // The Android side also reports where each code was found, which is
-            // what positions the result indicators. The iOS engine wrapper does
-            // not surface vertex output yet, so the coordinates are null and no
-            // indicators are drawn on this platform. Sending the same shape
-            // keeps the Dart layer free of platform branches; see
-            // docs/decisions/0006-ios-trollstore.md.
-            let payload: [[String: Any?]] = texts.map { text in
-                ["text": text, "x": nil, "y": nil]
-            }
+        controller.onResults = { payload in
+            // The view has already attached each code's position; both platforms
+            // now send the same shape.
             DispatchQueue.main.async { [weak self] in
                 self?.eventSink?(payload)
             }

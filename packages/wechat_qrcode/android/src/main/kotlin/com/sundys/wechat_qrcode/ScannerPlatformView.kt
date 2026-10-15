@@ -17,6 +17,7 @@ package com.sundys.wechat_qrcode
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Point
 import android.os.Handler
@@ -130,6 +131,10 @@ internal class ScannerPlatformView(
     private var isBound = false
     private var isAnalyzing = false
     private var disposed = false
+
+    /** PNG of the most recent frame that produced a result. */
+    @Volatile
+    private var lastFramePng: ByteArray? = null
 
     /**
      * Re-triggers autofocus on a timer.
@@ -286,6 +291,8 @@ internal class ScannerPlatformView(
             val viewWidth = previewView.width
             val viewHeight = previewView.height
 
+            storeLastFrame(result)
+
             val codes = texts.mapIndexed { index, text ->
                 val quad = quads.getOrNull(index)?.takeIf { it.size == 4 }
                 if (quad == null || viewWidth <= 0 || viewHeight <= 0) {
@@ -311,6 +318,23 @@ internal class ScannerPlatformView(
         override fun onFailure(e: Exception?) {
             // "No QR code in this frame" is the common case and is reported as a
             // failure by the analyzer; it is not an error worth surfacing.
+        }
+    }
+
+    /**
+     * Keeps a PNG of the frame a result came from.
+     *
+     * Runs on the analysis thread; the encode costs a few milliseconds and
+     * happens only when something was decoded.
+     */
+    private fun storeLastFrame(result: AnalyzeResult<DecodeResult>) {
+        try {
+            val bitmap = result.bitmap ?: return
+            val stream = java.io.ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 90, stream)
+            lastFramePng = stream.toByteArray()
+        } catch (e: Exception) {
+            // A missing frame costs the caller the freeze, not the scan.
         }
     }
 
@@ -368,6 +392,17 @@ internal class ScannerPlatformView(
             // preview still works with whatever focus mode the device chose.
         }
     }
+
+    /**
+     * The frame the last result was decoded from, PNG-encoded, or `null`.
+     *
+     * Deliberately the *analysed* frame rather than a snapshot of the preview:
+     * the code positions were computed from this image, so freezing it keeps the
+     * markers on the codes. A view snapshot is a later frame, and the two drift
+     * apart as soon as the phone moves — which is exactly the problem this
+     * solves. It is encoded once per detection, not per frame.
+     */
+    fun lastFrame(): ByteArray? = lastFramePng
 
     /** Enables or disables the torch. No-op on devices without one. */
     fun setTorch(enabled: Boolean) {

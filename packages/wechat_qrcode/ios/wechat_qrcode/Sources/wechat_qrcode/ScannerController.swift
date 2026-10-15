@@ -33,7 +33,10 @@ final class ScannerController {
     private(set) var isPaused = false
 
     /// Invoked on the analysis queue; the plugin marshals it to the main thread.
-    var onResults: (([String]) -> Void)?
+    ///
+    /// Each entry is `{text, x, y}` with the centre as a fraction of the preview,
+    /// or null when the engine reported no position for that code.
+    var onResults: (([[String: Any?]]) -> Void)?
 
     /// Invoked on the analysis queue; the plugin marshals it to the main thread.
     var onError: ((String, String) -> Void)?
@@ -114,8 +117,17 @@ final class ScannerController {
         view?.release()
     }
 
-    func onDecoded(_ texts: [String]) {
-        onResults?(texts)
+    func onDecoded(_ payload: [[String: Any?]]) {
+        onResults?(payload)
+    }
+
+    /// The frame the last result was decoded from, PNG-encoded.
+    func lastFrame() -> Data? {
+        lock.lock()
+        let view = self.view
+        lock.unlock()
+
+        return view?.lastFrame()
     }
 
     func onCameraError(code: String, message: String) {

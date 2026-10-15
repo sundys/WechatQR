@@ -27,6 +27,22 @@
 
 NSString *const WeChatQRCodeEngineErrorDomain = @"com.sundys.wechat_qrcode.engine";
 
+#pragma mark - WeChatQRCodeMatch
+
+@implementation WeChatQRCodeMatch
+
+- (instancetype)initWithText:(NSString *)text
+                    centreInImage:(nullable NSValue *)centreInImage {
+    self = [super init];
+    if (self) {
+        _text = [text copy];
+        _centreInImage = centreInImage;
+    }
+    return self;
+}
+
+@end
+
 /// Longest edge an image is resized to before detection, matching the Android
 /// implementation so both platforms behave the same on large photos.
 static const CGFloat kMaxImageDimension = 2400.0;
@@ -108,8 +124,8 @@ static std::unique_ptr<cv::wechat_qrcode::WeChatQRCode> gDetector;
     }
 }
 
-+ (NSArray<NSString *> *)detectAndDecodePixelBuffer:(CVPixelBufferRef)pixelBuffer
-                                    rotationDegrees:(int)rotationDegrees {
++ (NSArray<WeChatQRCodeMatch *> *)detectAndDecodePixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                            rotationDegrees:(int)rotationDegrees {
     if (!pixelBuffer) {
         return @[];
     }
@@ -184,13 +200,21 @@ static std::unique_ptr<cv::wechat_qrcode::WeChatQRCode> gDetector;
     }
 
     // Already upright: UIGraphicsImageRenderer normalised the orientation.
-    return [self detectAndDecodeBgr:&bgr rotationDegrees:0];
+    //
+    // A picture from the gallery carries no preview to place a marker on, so
+    // only the payloads are returned here; the analysis path is the one that
+    // needs positions.
+    NSMutableArray<NSString *> *texts = [NSMutableArray array];
+    for (WeChatQRCodeMatch *match in [self detectAndDecodeBgr:&bgr rotationDegrees:0]) {
+        [texts addObject:match.text];
+    }
+    return texts;
 }
 
 #pragma mark - Private
 
-+ (NSArray<NSString *> *)detectAndDecodeBgr:(cv::Mat *)bgr
-                            rotationDegrees:(int)rotationDegrees {
++ (NSArray<WeChatQRCodeMatch *> *)detectAndDecodeBgr:(cv::Mat *)bgr
+                                        rotationDegrees:(int)rotationDegrees {
     // Rotate in place so the detector sees an upright symbol. QR decoding is
     // rotation-tolerant, but normalising costs almost nothing and keeps the
     // super-resolution path consistent.
@@ -225,15 +249,60 @@ static std::unique_ptr<cv::wechat_qrcode::WeChatQRCode> gDetector;
         }
     }
 
-    NSMutableArray<NSString *> *results =
+    NSMutableArray<WeChatQRCodeMatch *> *matches =
         [NSMutableArray arrayWithCapacity:decoded.size()];
-    for (const cv::String &text : decoded) {
-        NSString *string = [NSString stringWithUTF8String:text.c_str()];
-        if (string.length > 0) {
-            [results addObject:string];
+
+    for (size_t index = 0; index < decoded.size(); index++) {
+        NSString *text = [NSString stringWithUTF8String:decoded[index].c_str()];
+        if (text.length == 0) {
+            continue;
         }
+
+        // The quadrangle is in the rotated image's coordinates, which is what
+        // the preview shows, so normalising by that image's size puts the centre
+        // into the same 0..1 space the caller maps onto the view.
+        NSValue *centre = nil;
+        if (index < points.size()) {
+            centre = [self centreOfQuad:points[index] inImageOfSize:bgr->size()];
+        }
+
+        [matches addObject:[[WeChatQRCodeMatch alloc] initWithText:text
+                                                    centreInImage:centre]];
     }
-    return results;
+    return matches;
+}
+
+/// The centre of a detected quadrangle, normalised to the image, or nil.
+///
+/// The engine's output shape is not guaranteed — the points arrive either as a
+/// 4x2 matrix or as four 1x2 rows — so both are reshaped to a common form before
+/// anything is read. `convertTo` is used rather than a typed accessor so the
+/// element type does not matter either.
++ (nullable NSValue *)centreOfQuad:(const cv::Mat &)quad
+                     inImageOfSize:(cv::Size)imageSize {
+    if (quad.empty() || imageSize.width <= 0 || imageSize.height <= 0) {
+        return nil;
+    }
+
+    cv::Mat points;
+    quad.convertTo(points, CV_64F);
+    if (points.channels() == 2) {
+        points = points.reshape(1);
+    }
+    if (points.rows < 4 || points.cols < 2) {
+        return nil;
+    }
+
+    double sumX = 0.0;
+    double sumY = 0.0;
+    for (int row = 0; row < 4; row++) {
+        sumX += points.at<double>(row, 0);
+        sumY += points.at<double>(row, 1);
+    }
+
+    double x = sumX / 4.0 / imageSize.width;
+    double y = sumY / 4.0 / imageSize.height;
+    return [NSValue valueWithCGPoint:CGPointMake(x, y)];
 }
 
 /// Converts a BGRA `CVPixelBuffer` into a tightly packed BGR `cv::Mat`.

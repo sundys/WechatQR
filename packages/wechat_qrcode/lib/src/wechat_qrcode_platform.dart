@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/widgets.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
@@ -73,6 +75,14 @@ abstract class WeChatQrCodePlatform extends PlatformInterface {
 
   /// Turns the torch on or off. Silently ignored where unsupported.
   Future<void> setTorch(bool enabled);
+
+  /// A still image of the preview as it is right now, PNG-encoded, or `null`
+  /// when the platform cannot produce one.
+  ///
+  /// Used to freeze what the user is looking at while markers are on screen: a
+  /// live preview keeps moving, so markers drawn for the frame that was analysed
+  /// drift off the codes within a moment.
+  Future<Uint8List?> capturePreview();
 
   /// Releases the detector and any other native resources.
   Future<void> release();

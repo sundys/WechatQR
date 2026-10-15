@@ -213,6 +213,7 @@ class WeChatQrcodePlugin :
                 controller.resumeScanning()
                 result.success(null)
             }
+            "capturePreview" -> capturePreview(result)
             "setTorch" -> {
                 controller.setTorch(call.argument<Boolean>("enabled") ?: false)
                 result.success(null)
@@ -224,6 +225,16 @@ class WeChatQrcodePlugin :
             }
             else -> result.notImplemented()
         }
+    }
+
+    /**
+     * Hands Dart a PNG of the frame the last result was decoded from.
+     *
+     * Always answered, with `null` when there is nothing to hand over: a missing
+     * frame costs the caller a frozen picture, not the scan.
+     */
+    private fun capturePreview(result: MethodChannel.Result) {
+        result.success(controller.lastFrame())
     }
 
     private fun initialize(result: MethodChannel.Result) {

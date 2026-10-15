@@ -60,6 +60,12 @@ class MethodChannelWeChatQrCode extends WeChatQrCodePlatform {
       _invoke('setTorch', {'enabled': enabled});
 
   @override
+  Future<Uint8List?> capturePreview() async {
+    final result = await _invoke<Uint8List>('capturePreview');
+    return result;
+  }
+
+  @override
   Future<void> release() => _invoke('release');
 
   @override

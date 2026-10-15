@@ -99,6 +99,9 @@ internal class ScannerController {
         view?.setTorch(enabled)
     }
 
+    /** The frame the last result came from, or null when there is no view. */
+    fun lastFrame(): ByteArray? = view?.lastFrame()
+
     fun onDecoded(codes: List<DecodedCode>) {
         onResults?.invoke(codes)
     }

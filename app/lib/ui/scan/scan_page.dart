@@ -78,14 +78,12 @@ class _ScanPageState extends State<ScanPage> {
     }
 
     if (!widget.isActive) {
-      // Paused, not stopped. Releasing the camera here meant re-acquiring it on
-      // the way back, and the preview showed black for as long as that took —
-      // the flicker seen when switching tabs. Keeping the camera open behind the
-      // other tabs shows a live preview the instant the scan tab returns.
-      //
-      // The spec asks for the camera to be paused when this page is left, and
-      // reserves releasing it for backgrounding; AppShell does that.
-      await scan.pauseScanning();
+      // Released, not merely paused. Pausing would avoid the brief black frame
+      // while the camera is re-acquired on the way back, but it leaves the camera
+      // open behind the other tabs — holding it against other applications and
+      // keeping the system's camera indicator lit. That trade was made and then
+      // reversed: releasing is the behaviour that was asked for.
+      await scan.stopScanning();
       return;
     }
 
@@ -299,6 +297,20 @@ class _ScanPageState extends State<ScanPage> {
       fit: StackFit.expand,
       children: [
         scan.buildScannerView(),
+
+        // The still image replaces what the camera is showing while markers are
+        // on screen. The markers were placed for this frame, and a live preview
+        // moves out from under them as soon as the phone does.
+        if (scan.frozenFrame != null)
+          Positioned.fill(
+            child: Image.memory(
+              scan.frozenFrame!,
+              fit: BoxFit.cover,
+              // Keeps the previous still visible while the next decodes, so
+              // there is no flash of the live preview behind it.
+              gaplessPlayback: true,
+            ),
+          ),
 
         // Result indicators. Drawn in Flutter rather than by the native
         // viewfinder so the tap and the selection window live in the same
@@ -638,7 +650,7 @@ class _CodeMarker extends StatelessWidget {
   });
 
   /// Touch target edge length. Comfortably above the 48dp minimum.
-  static const double size = 56;
+  static const double size = 76;
 
   final int index;
   final bool interactive;
@@ -661,12 +673,12 @@ class _CodeMarker extends StatelessWidget {
           height: size,
           child: Center(
             child: Container(
-              width: 22,
-              height: 22,
+              width: 34,
+              height: 34,
               decoration: BoxDecoration(
                 color: markerColor,
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 3),
+                border: Border.all(color: Colors.white, width: 4),
                 boxShadow: const [
                   BoxShadow(color: Color(0x55000000), blurRadius: 6),
                 ],
@@ -677,7 +689,7 @@ class _CodeMarker extends StatelessWidget {
                         '$index',
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 11,
+                          fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
                       ),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:platform_services/platform_services.dart';
@@ -80,6 +81,17 @@ class ScanController extends ChangeNotifier {
   /// the indicators stay put behind the sheet.
   List<ScannedCode> _marked = const <ScannedCode>[];
   List<ScannedCode> get markedCodes => _marked;
+
+  Uint8List? _frozenFrame;
+
+  /// A still image of the frame the markers were placed for, or `null`.
+  ///
+  /// The picture is held still while markers are on screen because the markers
+  /// belong to the frame the codes were decoded from: with a live preview they
+  /// drift off the codes the moment the phone moves.
+  Uint8List? get frozenFrame => _frozenFrame;
+
+  bool _disposed = false;
 
   bool _awaitingSelection = false;
 
@@ -248,15 +260,33 @@ class ScanController extends ChangeNotifier {
     _marked = codes;
     notifyListeners();
 
-    // Freeze the frame while the user decides, so the codes do not move out
-    // from under the indicators. The preview stays live.
-    unawaited(pauseScanning());
+    unawaited(_freezeFrame());
 
     _selectionTimer?.cancel();
     _selectionTimer = Timer(_selectionWindow, () {
       _selectionTimer = null;
       unawaited(_showAllMarked());
     });
+  }
+
+  /// Captures the current frame and suspends analysis.
+  ///
+  /// Safe to call repeatedly: the frame is captured once, so the picture does
+  /// not change under markers that were placed for an earlier one.
+  Future<void> _freezeFrame() async {
+    if (_frozenFrame == null) {
+      try {
+        _frozenFrame = await _engine.capturePreview();
+      } on WeChatQrCodeException {
+        // No still image available: the markers then float over a live preview,
+        // which is worse but not broken.
+        _frozenFrame = null;
+      }
+      if (!_disposed) {
+        notifyListeners();
+      }
+    }
+    await pauseScanning();
   }
 
   /// Called when the selection window elapses: show every marked code.
@@ -331,8 +361,9 @@ class ScanController extends ChangeNotifier {
   }) async {
     if (source == ScanSource.camera) {
       // Pause the recognition loop so the sheet cannot be replaced or re-shown
-      // while it is on screen (project spec §6.1).
-      await pauseScanning();
+      // while it is on screen (project spec §6.1), and hold the picture still so
+      // the markers stay on the codes behind the sheet.
+      await _freezeFrame();
     }
 
     _result = selection;
@@ -365,11 +396,17 @@ class ScanController extends ChangeNotifier {
     }
 
     if (settings.continuousScan) {
-      await _history.add(
-        content: selection.primary,
-        source: source,
-        scannedAt: at,
-      );
+      // Every payload the frame produced, not just the one being presented. A
+      // frame that decoded several codes recorded only the one shown, so the
+      // rest were lost as soon as the preview moved on — which is exactly when
+      // the user noticed them. `marked` is the whole set for a camera frame;
+      // a picture from the gallery has no markers, so its own results are used.
+      final contents = marked.isNotEmpty
+          ? marked.map((code) => code.text).toList(growable: false)
+          : selection.all;
+      for (final content in contents) {
+        await _history.add(content: content, source: source, scannedAt: at);
+      }
     }
 
     if (settings.autoOpenWebsite) {
@@ -400,6 +437,8 @@ class ScanController extends ChangeNotifier {
     _awaitingSelection = false;
     _result = null;
     _marked = const <ScannedCode>[];
+    // Let the preview move again now that nothing is pinned to a frame.
+    _frozenFrame = null;
     _resultCopied = false;
     _resultLinkFailed = false;
     notifyListeners();
@@ -443,6 +482,7 @@ class ScanController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _selectionTimer?.cancel();
     _subscription?.cancel();
     _messages.close();

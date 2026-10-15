@@ -43,6 +43,10 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
     private var isRunning = false
     private var runtimeErrorObserver: NSObjectProtocol?
 
+    /** PNG of the most recent frame that produced a result. */
+    @Volatile
+    private var lastFramePng: Data?
+
     /// Set while a result is on screen; frames are ignored rather than analysed.
     /// The camera stays open so the preview does not flicker.
     private var isAnalyzing = false
@@ -73,6 +77,9 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
     }
 
     func view() -> UIView { container }
+
+    /// The frame the last result came from, or `nil`.
+    func lastFrame() -> Data? { lastFramePng }
 
     // MARK: - Session control
 
@@ -289,17 +296,86 @@ extension ScannerPlatformView: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
+        let degrees = rotationDegrees(for: connection)
+
         // Objective-C declares this as
         // `detectAndDecodePixelBuffer:rotationDegrees:`, but Swift drops
         // "PixelBuffer" — it repeats the first parameter's type — leaving
         // `detectAndDecode(_:rotationDegrees:)`, with the first argument
         // unlabelled.
-        let decoded = WeChatQRCodeEngine.detectAndDecode(
+        let matches = WeChatQRCodeEngine.detectAndDecode(
             pixelBuffer,
-            rotationDegrees: Int32(rotationDegrees(for: connection)))
+            rotationDegrees: Int32(degrees))
 
-        guard !decoded.isEmpty else { return }
-        controller.onDecoded(decoded)
+        guard !matches.isEmpty else { return }
+
+        // The engine reports centres in the coordinates of the image it analysed,
+        // which is the sensor image rotated upright. The preview shows the same
+        // rotation, so the same image size is what the mapping needs.
+        let imageSize = rotatedImageSize(of: pixelBuffer, degrees: degrees)
+
+        let payload: [[String: Any?]] = matches.map { match in
+            var x: Double?
+            var y: Double?
+            if let centre = match.centreInImage?.cgPointValue,
+               let normalised = normalise(centre, imageSize: imageSize) {
+                x = Double(normalised.x)
+                y = Double(normalised.y)
+            }
+            return ["text": match.text, "x": x, "y": y]
+        }
+
+        storeLastFrame(pixelBuffer)
+        controller.onDecoded(payload)
+    }
+
+    /// The analysed image's size, accounting for the rotation the engine applied.
+    private func rotatedImageSize(
+        of pixelBuffer: CVPixelBuffer, degrees: Int
+    ) -> CGSize {
+        let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+        let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+        return (degrees == 90 || degrees == 270)
+            ? CGSize(width: height, height: width)
+            : CGSize(width: width, height: height)
+    }
+
+    /// Maps a centre given in image coordinates onto the preview layer.
+    ///
+    /// The layer uses `.resizeAspectFill`, so the image is scaled to cover the
+    /// view and centre-cropped; those offsets have to come back out or every
+    /// marker sits displaced towards the centre. The result is a fraction of the
+    /// view, which is what the Flutter layer positions markers with — the same
+    /// arithmetic the Android view does.
+    private func normalise(_ centre: CGPoint, imageSize: CGSize) -> CGPoint? {
+        let viewSize = previewLayer.bounds.size
+        guard imageSize.width > 0, imageSize.height > 0,
+              viewSize.width > 0, viewSize.height > 0
+        else {
+            return nil
+        }
+
+        let scale = max(viewSize.width / imageSize.width,
+                        viewSize.height / imageSize.height)
+        let offsetX = (imageSize.width * scale - viewSize.width) / 2
+        let offsetY = (imageSize.height * scale - viewSize.height) / 2
+
+        let x = (centre.x * imageSize.width * scale - offsetX) / viewSize.width
+        let y = (centre.y * imageSize.height * scale - offsetY) / viewSize.height
+        return CGPoint(x: min(max(x, 0), 1), y: min(max(y, 0), 1))
+    }
+
+    /// Keeps a PNG of the frame a result came from, for the caller to freeze.
+    ///
+    /// Encoding once per detection, not per frame. A layer snapshot is not an
+    /// option here: `AVCaptureVideoPreviewLayer` does not draw its video frames
+    /// into its backing store, so rendering it yields a blank image.
+    private func storeLastFrame(_ pixelBuffer: CVPixelBuffer) {
+        let image = CIImage(cvPixelBuffer: pixelBuffer)
+        guard let cgImage = CIContext().createCGImage(image, from: image.extent) else {
+            return
+        }
+        lastFramePng = UIImage(cgImage: cgImage).pngData()
     }
 }
 

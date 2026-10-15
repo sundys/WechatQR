@@ -195,6 +195,12 @@ class FakeWeChatQrCodePlatform extends WeChatQrCodePlatform {
   @override
   Future<void> setTorch(bool enabled) async => lastTorch = enabled;
 
+  /// The still image [capturePreview] hands back; null means "unavailable".
+  Uint8List? previewSnapshot;
+
+  @override
+  Future<Uint8List?> capturePreview() async => previewSnapshot;
+
   @override
   Future<void> release() async {}
 

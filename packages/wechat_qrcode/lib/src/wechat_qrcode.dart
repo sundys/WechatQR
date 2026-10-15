@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/widgets.dart';
 
 import 'scanned_code.dart';
@@ -67,6 +69,11 @@ class WeChatQrCode {
 
   /// Enables or disables the torch; unsupported devices ignore this.
   Future<void> setTorch(bool enabled) => _platform.setTorch(enabled);
+
+  /// A PNG snapshot of the preview as it is now, or `null`.
+  ///
+  /// Callers use this to hold the picture still while markers are on screen.
+  Future<Uint8List?> capturePreview() => _platform.capturePreview();
 
   /// Releases the detector and native resources. The instance must be
   /// re-initialised afterwards.

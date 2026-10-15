@@ -21,6 +21,26 @@ NS_ASSUME_NONNULL_BEGIN
 
 extern NSString *const WeChatQRCodeEngineErrorDomain;
 
+/// One decoded QR code and where it was found.
+@interface WeChatQRCodeMatch : NSObject
+
+/// The payload exactly as decoded.
+@property (nonatomic, copy, readonly) NSString *text;
+
+/// Centre of the code, normalised to the analysed image (`0,0` top-left).
+///
+/// `nil` when the engine reported no quadrangle for this code, in which case the
+/// caller draws no marker for it rather than a misplaced one.
+@property (nonatomic, strong, readonly, nullable) NSValue *centreInImage;
+
+- (instancetype)initWithText:(NSString *)text
+                    centreInImage:(nullable NSValue *)centreInImage
+    NS_DESIGNATED_INITIALIZER;
+
+- (instancetype)init NS_UNAVAILABLE;
+
+@end
+
 typedef NS_ENUM(NSInteger, WeChatQRCodeEngineErrorCode) {
     WeChatQRCodeEngineErrorModelsMissing = 1,
     WeChatQRCodeEngineErrorDetectorCreationFailed = 2,
@@ -57,8 +77,12 @@ typedef NS_ENUM(NSInteger, WeChatQRCodeEngineErrorCode) {
 /// frame upright (as reported by AVCaptureConnection.videoRotationAngle).
 /// Returns an empty array when no QR code is found; never returns nil for a
 /// valid buffer.
-+ (NSArray<NSString *> *)detectAndDecodePixelBuffer:(CVPixelBufferRef)pixelBuffer
-                                    rotationDegrees:(int)rotationDegrees;
+///
+/// Each match carries its centre in image coordinates, which the caller maps to
+/// the preview view. The engine has always computed these — they were simply
+/// discarded, which is why the iOS side showed no result markers at all.
++ (NSArray<WeChatQRCodeMatch *> *)detectAndDecodePixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                            rotationDegrees:(int)rotationDegrees;
 
 /// Decodes every QR code in an image file on disk.
 ///

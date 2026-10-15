@@ -144,11 +144,15 @@ void main() {
 
       expect(controller.isAwaitingSelection, isFalse);
       expect(controller.result?.primary, 'second');
-      // Only the chosen payload is treated as the result, so the copy and
-      // history side effects apply to it alone.
+      // Only the chosen payload is presented...
       expect(controller.result?.isMulti, isFalse);
       expect(clipboard.text, 'second');
-      expect(history.entries.single.content, 'second');
+      // ...but the frame decoded two codes and both belong in the history, so
+      // neither is lost when the preview moves on.
+      expect(history.entries.map((e) => e.content).toSet(), {
+        'first',
+        'second',
+      });
     });
 
     test('the selection window elapsing shows every code', () async {
@@ -179,6 +183,10 @@ void main() {
       expect(controller.isAwaitingSelection, isFalse);
       expect(controller.result?.isMulti, isTrue);
       expect(controller.result?.all, ['first', 'second']);
+      expect(history.entries.map((e) => e.content).toSet(), {
+        'first',
+        'second',
+      });
     });
 
     test('a frame arriving during the selection window is ignored', () async {
