@@ -1,0 +1,143 @@
+name: iOS build (manual)
+
+# Produces the TrollStore .ipa.
+#
+# This is a manual workflow on purpose. Building OpenCV for iOS takes tens of
+# minutes on a cold cache, and iOS is not covered by the Android release path,
+# so the .ipa is built when it is wanted rather than on every release.
+#
+# Run it from Actions > "iOS build (manual)" > Run workflow. Leave
+# `attach_to_release` empty to only upload the artifact, or set it to an
+# existing release tag (for example `v1.0.0`) to also attach the .ipa to that
+# release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      attach_to_release:
+        description: 'Release tag to attach the .ipa to (empty = artifact only)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.44.5'
+  OPENCV_VERSION: '4.12.0'
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      name: ${{ steps.read.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version from pubspec.yaml
+        id: read
+        run: |
+          set -euo pipefail
+          name=$(sed -nE 's/^version:[[:space:]]*([^+[:space:]]+).*/\1/p' app/pubspec.yaml | head -1)
+          if [ -z "$name" ]; then
+            echo "::error::Could not read the version from app/pubspec.yaml"
+            exit 1
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Version: $name"
+
+  ios:
+    name: iOS IPA (TrollStore)
+    needs: version
+    runs-on: macos-14
+    timeout-minutes: 300
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # Building OpenCV for iOS takes tens of minutes, so the result is cached
+      # and only rebuilt when OPENCV_VERSION changes.
+      - name: Cache the OpenCV xcframework
+        id: opencv-cache
+        uses: actions/cache@v4
+        with:
+          path: packages/wechat_qrcode/ios/opencv2.xcframework
+          key: opencv-ios-${{ env.OPENCV_VERSION }}-${{ runner.arch }}
+
+      - name: Build the OpenCV xcframework
+        if: steps.opencv-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 240
+        env:
+          OPENCV_VERSION: ${{ env.OPENCV_VERSION }}
+        run: scripts/build_opencv_ios.sh
+
+      - name: Confirm the framework is present
+        run: |
+          set -euo pipefail
+          test -d packages/wechat_qrcode/ios/opencv2.xcframework \
+            || { echo "::error::opencv2.xcframework is missing; the plugin cannot link."; exit 1; }
+
+      - name: Resolve dependencies
+        working-directory: app
+        run: flutter pub get
+
+      # No codesigning: the .ipa produced here is meant for TrollStore, which
+      # applies its own signing on the device. There is no App Store or normal
+      # signing path for this artifact.
+      - name: Build the app
+        working-directory: app
+        run: flutter build ios --release --no-codesign
+
+      - name: Package the .ipa
+        working-directory: app
+        run: |
+          set -euo pipefail
+          version='${{ needs.version.outputs.name }}'
+          app_path="build/ios/iphoneos/Runner.app"
+          test -d "$app_path" || { echo "::error::$app_path was not produced."; exit 1; }
+
+          # The CNN models must be inside the bundle, or the engine cannot start
+          # on device. Checked here so a packaging regression fails the build.
+          find "$app_path" -name 'detect.prototxt' -print
+          find "$app_path" -name 'detect.prototxt' | grep -q . \
+            || { echo "::error::The QR models are not inside the app bundle."; exit 1; }
+
+          out="$GITHUB_WORKSPACE/wechatqr-${version}.ipa"
+          rm -rf "$RUNNER_TEMP/ipa"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$app_path" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$out" Payload)
+          echo "Built $out ($(stat -f%z "$out") bytes)."
+
+      - name: Upload the IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: app/wechatqr-*.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach the .ipa to a release
+        if: inputs.attach_to_release != ''
+        working-directory: app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='${{ inputs.attach_to_release }}'
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null \
+            || { echo "::error::No release named '$tag' exists. Create it by pushing the matching tag, or leave the input empty to only upload an artifact."; exit 1; }
+          gh release upload "$tag" wechatqr-*.ipa \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'

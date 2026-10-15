@@ -49,11 +49,22 @@ is platform-conditional except the update row.
 
 ## Build procedure (to be performed on macOS)
 
+Local:
+
 ```bash
 scripts/build_opencv_ios.sh      # produces packages/wechat_qrcode/ios/opencv2.xcframework
 cd app
-flutter build ios --release
+flutter build ios --release --no-codesign
 ```
+
+On CI, the manual workflow `.github/workflows/ios.yml` does the same and packages `Runner.app` into
+`wechatqr-<version>.ipa`. It is a separate workflow from the Android release on purpose: a cold run
+compiles OpenCV for iOS, which takes tens of minutes and would otherwise hold up every Android
+release. Running it with `attach_to_release` set to a tag attaches the `.ipa` to that existing
+release; leaving it empty only uploads a workflow artifact.
+
+The `.ipa` is unsigned. That is deliberate — TrollStore applies its own signing on the device — and
+not a gap to be closed later.
 
 ## What must be verified on a Mac and a real device
 

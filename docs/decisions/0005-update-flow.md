@@ -92,12 +92,16 @@ there is no APK installation path on iOS and none is claimed.
 
 ## Release pipeline
 
-`.github/workflows/release.yml` builds the artifacts this flow consumes. Android signing comes from
-repository secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
-`ANDROID_KEY_PASSWORD`); the keystore is written only into the runner's temp directory and never
-echoed. A **tagged** run aborts if any of the four is missing, so a debug-signed APK cannot be
-published by accident, while an untagged run falls back to the debug key with a loud Gradle warning.
-A `v*` tag also checks that the tag equals the version in `app/pubspec.yaml` before building.
+`.github/workflows/release.yml` builds the Android artifact this flow consumes and publishes it as a
+GitHub Release. Android signing comes from repository secrets (`ANDROID_KEYSTORE_BASE64`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`); the keystore is written
+only into the runner's temp directory and never echoed. A **tagged** run aborts if any of the four is
+missing, so a debug-signed APK cannot be published by accident, while an untagged run falls back to
+the debug key with a loud Gradle warning. A `v*` tag also checks that the tag equals the version in
+`app/pubspec.yaml` before building.
+
+The `.ipa` is produced separately by the manual `.github/workflows/ios.yml` and can be attached to an
+existing release, so a slow iOS build never blocks an Android release.
 
 The workflow asserts the properties this decision depends on, rather than trusting the build: the
 release APK must contain `lib/arm64-v8a/libopencv_java4.so` and the four models, and must contain no

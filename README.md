@@ -146,17 +146,23 @@ It will be verifiable once the first release exists.
 
 ## Releasing
 
-Two workflows, both in `.github/workflows/`:
+Three workflows, all in `.github/workflows/`:
 
 * **`ci.yml`** — on every push to `main` and every PR: formatting, `flutter analyze` across all three
   packages, `flutter test`, plus a debug APK build that asserts the APK really contains
   `libopencv_java4.so` and the four model files.
-* **`release.yml`** — on a `v*` tag, or manually via *Run workflow*.
+* **`release.yml`** — on a `v*` tag: builds the Android APK and publishes a GitHub Release. Also
+  runnable manually, which builds the APK without publishing anything.
+* **`ios.yml`** — **manual only**. Builds the TrollStore `.ipa` and can attach it to an existing
+  release.
+
+iOS is kept out of the tag pipeline on purpose: a cold run has to compile OpenCV for iOS, which takes
+tens of minutes and would hold up every Android release. Build the `.ipa` when you want it.
 
 ### Before the first tagged release
 
-Signing configuration must exist as repository secrets. Until then, run the workflow manually: it
-builds both artifacts and uploads them as workflow artifacts, and **publishes nothing**.
+Android signing configuration must exist as repository secrets. Until then, run `release.yml`
+manually: it builds the APK and uploads it as a workflow artifact, and **publishes nothing**.
 
 | Secret | Purpose |
 |---|---|
@@ -170,7 +176,7 @@ echoed. A **tagged** build fails immediately if any of the four is missing, so a
 cannot be published by accident; an untagged build falls back to the debug key and says so loudly in
 the Gradle log.
 
-### Cutting a release
+### Cutting an Android release
 
 ```bash
 # 1. Set the version — the tag must match it exactly.
@@ -181,20 +187,26 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The workflow then:
+`release.yml` then:
 
 1. verifies the tag matches `app/pubspec.yaml`;
 2. builds `wechatqr-<version>-arm64-v8a.apk`, signed with the upload key, and fails the job if the
    APK contains any ABI other than arm64-v8a or is missing the engine or models;
-3. builds `wechatqr-<version>.ipa` on macOS — unsigned, for TrollStore — and fails the job if the
-   models are not inside the app bundle;
-4. creates a GitHub Release with both files and generated release notes.
+3. creates a GitHub Release with that APK and generated release notes.
 
-The iOS job builds a minimal OpenCV framework first (`scripts/build_opencv_ios.sh`, tens of
-minutes). The result is cached under `opencv-ios-<version>`, so it is built once per OpenCV version
-rather than per release.
+### Building the iOS .ipa
 
-### About the iOS artifact
+Actions → **iOS build (manual)** → *Run workflow*.
+
+| Input | Effect |
+|---|---|
+| `attach_to_release` left empty | Builds the `.ipa` and uploads it as a workflow artifact only |
+| `attach_to_release` set to a tag, e.g. `v1.0.0` | Also attaches `wechatqr-<version>.ipa` to that release |
+
+The job builds a minimal OpenCV framework first (`scripts/build_opencv_ios.sh`), cached under
+`opencv-ios-<version>`, so that step runs once per OpenCV version rather than per build. It then runs
+`flutter build ios --release --no-codesign` and packages `Runner.app` into an `.ipa`, failing if the
+models are not inside the app bundle.
 
 The `.ipa` is **unsigned** on purpose: it targets TrollStore, which applies its own signing on the
 device. There is no App Store or normal signing path here, and none is claimed.
