@@ -19,18 +19,24 @@ plugins {
 // When any of them is missing the release build falls back to the debug key so
 // that `flutter build apk --release` still works locally. That fallback is
 // loud on purpose: an accidentally debug-signed release must be obvious.
+//
+// The `env` prefix is not cosmetic. Inside `signingConfigs { create("release") { … } }`
+// the implicit receiver is the SigningConfig, which has its own
+// `storePassword` / `keyAlias` / `keyPassword` properties — so bare names there
+// resolve to the receiver and silently become self-assignments of null, and the
+// build then fails at packaging with "missing required property keyPassword".
 // ---------------------------------------------------------------------------
-val keystorePath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
-val keystorePassword: String? = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-val keyAlias: String? = System.getenv("ANDROID_KEY_ALIAS")
-val keyPassword: String? = System.getenv("ANDROID_KEY_PASSWORD")
+val envKeystorePath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
+val envKeystorePassword: String? = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+val envKeyAlias: String? = System.getenv("ANDROID_KEY_ALIAS")
+val envKeyPassword: String? = System.getenv("ANDROID_KEY_PASSWORD")
 
 val hasReleaseSigning: Boolean =
-    !keystorePath.isNullOrBlank() &&
-        !keystorePassword.isNullOrBlank() &&
-        !keyAlias.isNullOrBlank() &&
-        !keyPassword.isNullOrBlank() &&
-        file(keystorePath).exists()
+    !envKeystorePath.isNullOrBlank() &&
+        !envKeystorePassword.isNullOrBlank() &&
+        !envKeyAlias.isNullOrBlank() &&
+        !envKeyPassword.isNullOrBlank() &&
+        file(envKeystorePath).exists()
 
 android {
     namespace = "com.sundys.wechatqr"
@@ -68,10 +74,12 @@ android {
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {
-                storeFile = file(keystorePath!!)
-                storePassword = keystorePassword
-                keyAlias = keyAlias
-                keyPassword = keyPassword
+                // Qualified on purpose: see the note above about SigningConfig
+                // shadowing these names in this scope.
+                storeFile = file(envKeystorePath!!)
+                storePassword = envKeystorePassword
+                keyAlias = envKeyAlias
+                keyPassword = envKeyPassword
             }
         }
     }
