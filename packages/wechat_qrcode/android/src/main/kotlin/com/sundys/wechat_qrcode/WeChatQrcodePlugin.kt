@@ -23,9 +23,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
-import androidx.activity.ComponentActivity
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.king.wechat.qrcode.QrEngineInitException
@@ -36,6 +33,7 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.PluginRegistry
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
@@ -79,9 +77,33 @@ class WeChatQrcodePlugin :
     private var eventSink: EventChannel.EventSink? = null
 
     private var activity: Activity? = null
-    private var cameraPermissionLauncher: ActivityResultLauncher<String>? = null
+    private var activityBinding: ActivityPluginBinding? = null
     private var pendingStartResult: MethodChannel.Result? = null
     private var hasRequestedCameraPermission = false
+
+    /**
+     * Receives the answer to the camera prompt.
+     *
+     * `FlutterActivity` extends `android.app.Activity`, **not**
+     * `androidx.activity.ComponentActivity`, so
+     * `ComponentActivity.registerForActivityResult()` is not available to a
+     * plugin. An earlier version of this class cast the activity to
+     * `ComponentActivity`; the cast returned null, no launcher was created, and
+     * the permission dialog was never requested — the user saw the button do
+     * nothing. This listener is the supported path and works with a plain
+     * Activity.
+     */
+    private val permissionListener =
+        PluginRegistry.RequestPermissionsResultListener { requestCode, _, grantResults ->
+            if (requestCode != CAMERA_PERMISSION_REQUEST_CODE) {
+                false
+            } else {
+                val granted = grantResults.isNotEmpty() &&
+                    grantResults[0] == PackageManager.PERMISSION_GRANTED
+                onCameraPermissionResult(granted)
+                true
+            }
+        }
 
     // ---------------------------------------------------------------- attaching
 
@@ -93,8 +115,17 @@ class WeChatQrcodePlugin :
         eventChannel.setStreamHandler(this)
         binding.platformViewRegistry.registerViewFactory(VIEW_TYPE, this)
 
-        controller.onResults = { texts ->
-            mainHandler.post { eventSink?.success(texts) }
+        controller.onResults = { codes ->
+            // Each code travels as a map so the Flutter layer knows both what was
+            // decoded and where it was, which is what positions the indicators.
+            val payload = codes.map { code ->
+                mapOf<String, Any?>(
+                    "text" to code.text,
+                    "x" to code.x,
+                    "y" to code.y,
+                )
+            }
+            mainHandler.post { eventSink?.success(payload) }
         }
         controller.onError = { code, message ->
             mainHandler.post { eventSink?.error(code, message, null) }
@@ -129,31 +160,28 @@ class WeChatQrcodePlugin :
     // ---------------------------------------------------------------- activity
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
-        attachActivity(binding.activity)
+        attachActivity(binding)
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
-        attachActivity(binding.activity)
+        attachActivity(binding)
     }
 
     override fun onDetachedFromActivityForConfigChanges() = detachActivity()
 
     override fun onDetachedFromActivity() = detachActivity()
 
-    private fun attachActivity(activity: Activity) {
-        this.activity = activity
-        // Registered here, before the Activity reaches STARTED, because
-        // ComponentActivity requires result contracts to be registered early.
-        cameraPermissionLauncher =
-            (activity as? ComponentActivity)
-                ?.registerForActivityResult(
-                    ActivityResultContracts.RequestPermission(),
-                ) { granted -> onCameraPermissionResult(granted) }
+    private fun attachActivity(binding: ActivityPluginBinding) {
+        detachActivity()
+        activity = binding.activity
+        activityBinding = binding
+        binding.addRequestPermissionsResultListener(permissionListener)
     }
 
     private fun detachActivity() {
+        activityBinding?.removeRequestPermissionsResultListener(permissionListener)
+        activityBinding = null
         activity = null
-        cameraPermissionLauncher = null
         val pending = pendingStartResult
         pendingStartResult = null
         pending?.error(
@@ -269,20 +297,35 @@ class WeChatQrcodePlugin :
             return
         }
 
-        val launcher = cameraPermissionLauncher
-        if (launcher == null) {
+        if (pendingStartResult != null) {
+            // A prompt is already on screen; do not stack a second one.
             result.error(
-                CAMERA_UNAVAILABLE,
-                "The camera permission cannot be requested right now.",
+                CAMERA_PERMISSION_DENIED,
+                "A camera permission request is already in progress.",
                 null,
             )
             return
         }
 
-        // The reply is deferred until the user answers the system dialog.
+        // The reply is deferred until the user answers the system dialog. The
+        // request goes through the activity so the dialog is the real system
+        // prompt — this is the only thing that can grant the permission.
         pendingStartResult = result
         hasRequestedCameraPermission = true
-        launcher.launch(Manifest.permission.CAMERA)
+        try {
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(Manifest.permission.CAMERA),
+                CAMERA_PERMISSION_REQUEST_CODE,
+            )
+        } catch (e: Exception) {
+            pendingStartResult = null
+            result.error(
+                CAMERA_UNAVAILABLE,
+                "The camera permission could not be requested: ${e.message}",
+                null,
+            )
+        }
     }
 
     private fun onCameraPermissionResult(granted: Boolean) {
@@ -377,6 +420,9 @@ class WeChatQrcodePlugin :
 
         /** Longest edge an image is decoded at before detection. */
         const val MAX_IMAGE_DIMENSION = 2400
+
+        /** Arbitrary but unique within this plugin. */
+        const val CAMERA_PERMISSION_REQUEST_CODE = 0x5751
 
         // Error codes; these string values are part of the Dart contract
         // (WeChatQrCodeError.name).

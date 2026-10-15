@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'scanned_code.dart';
 import 'wechat_qrcode_error.dart';
 import 'wechat_qrcode_platform.dart';
 
@@ -60,8 +61,9 @@ class WeChatQrCode {
   /// Resumes frame analysis after [pauseScanning].
   Future<void> resumeScanning() => _platform.resumeScanning();
 
-  /// Decoded payloads, one event per successful frame.
-  Stream<List<String>> get results => _platform.scanResults();
+  /// Decoded payloads, one event per successful frame, each with the location
+  /// of the code in the preview when the engine supplied one.
+  Stream<List<ScannedCode>> get results => _platform.scanResults();
 
   /// Enables or disables the torch; unsupported devices ignore this.
   Future<void> setTorch(bool enabled) => _platform.setTorch(enabled);

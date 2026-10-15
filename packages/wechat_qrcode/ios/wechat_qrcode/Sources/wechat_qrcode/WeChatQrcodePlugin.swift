@@ -241,8 +241,17 @@ extension WeChatQrcodePlugin: FlutterStreamHandler {
     ) -> FlutterError? {
         eventSink = events
         controller.onResults = { texts in
+            // The Android side also reports where each code was found, which is
+            // what positions the result indicators. The iOS engine wrapper does
+            // not surface vertex output yet, so the coordinates are null and no
+            // indicators are drawn on this platform. Sending the same shape
+            // keeps the Dart layer free of platform branches; see
+            // docs/decisions/0006-ios-trollstore.md.
+            let payload: [[String: Any?]] = texts.map { text in
+                ["text": text, "x": nil, "y": nil]
+            }
             DispatchQueue.main.async { [weak self] in
-                self?.eventSink?(texts)
+                self?.eventSink?(payload)
             }
         }
         controller.onError = { code, message in

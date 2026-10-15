@@ -76,6 +76,11 @@ dependencies {
     // analyser. Apache-2.0. Brings CameraX in transitively.
     implementation("com.github.jenly1314:camera-scan:1.5.0")
 
+    // The reference project's viewfinder: scanning frame plus the animated laser
+    // line. Apache-2.0. The result indicators are drawn in Flutter instead, but
+    // the frame and scan animation are reused rather than reimplemented.
+    implementation("com.github.jenly1314:viewfinderview:1.4.0")
+
     // OpenCV Java bindings (org.opencv.*) required by the vendored detector.
     // These are the artifacts jenly1314 publishes for WeChatQRCode 2.6.0 and are
     // the "necessary dependency of the WeChatQRCode implementation" described in

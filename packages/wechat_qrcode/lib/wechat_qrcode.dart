@@ -7,6 +7,7 @@
 library;
 
 export 'src/method_channel_wechat_qrcode.dart';
+export 'src/scanned_code.dart';
 export 'src/wechat_qrcode.dart';
 export 'src/wechat_qrcode_error.dart';
 export 'src/wechat_qrcode_platform.dart';

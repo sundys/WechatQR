@@ -16,6 +16,16 @@
 package com.sundys.wechat_qrcode
 
 /**
+ * One decoded payload, with where it was found.
+ *
+ * [x] and [y] are the centre of the code normalised to `0.0..1.0` of the preview
+ * view, so the Flutter layer can place an indicator without knowing anything
+ * about preview scaling. They are `null` when the engine reported no vertices
+ * for that code, in which case no indicator is drawn for it.
+ */
+internal data class DecodedCode(val text: String, val x: Double?, val y: Double?)
+
+/**
  * Shared camera state between the plugin (which answers Dart's method calls) and
  * the [ScannerPlatformView] (which owns the CameraX session).
  *
@@ -40,7 +50,7 @@ internal class ScannerController {
         private set
 
     /** Invoked on the analysis thread; the plugin marshals it to the UI thread. */
-    var onResults: ((List<String>) -> Unit)? = null
+    var onResults: ((List<DecodedCode>) -> Unit)? = null
 
     /** Invoked on the analysis thread; the plugin marshals it to the UI thread. */
     var onError: ((code: String, message: String) -> Unit)? = null
@@ -89,8 +99,8 @@ internal class ScannerController {
         view?.setTorch(enabled)
     }
 
-    fun onDecoded(texts: List<String>) {
-        onResults?.invoke(texts)
+    fun onDecoded(codes: List<DecodedCode>) {
+        onResults?.invoke(codes)
     }
 
     fun onCameraError(code: String, message: String) {

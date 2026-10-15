@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'scanned_code.dart';
 import 'wechat_qrcode_error.dart';
 import 'wechat_qrcode_platform.dart';
 
@@ -62,21 +63,48 @@ class MethodChannelWeChatQrCode extends WeChatQrCodePlatform {
   Future<void> release() => _invoke('release');
 
   @override
-  Stream<List<String>> scanResults() {
+  Stream<List<ScannedCode>> scanResults() {
     return events
         .receiveBroadcastStream()
-        .map<List<String>>((event) {
-          if (event is List) {
-            return List<String>.unmodifiable(event.whereType<String>());
+        .map<List<ScannedCode>>((event) {
+          if (event is! List) {
+            throw const WeChatQrCodeException(
+              WeChatQrCodeError.decodeFailed,
+              'Scan result event was not a list.',
+            );
           }
-          throw const WeChatQrCodeException(
-            WeChatQrCodeError.decodeFailed,
-            'Scan result event was not a list of strings.',
-          );
+          return List<ScannedCode>.unmodifiable(event.map(_parseCode));
         })
         .handleError((Object error) {
           throw _mapError(error);
         });
+  }
+
+  /// Parses one entry of a scan-result event.
+  ///
+  /// Entries are maps of `{text, x, y}`; `x`/`y` may be absent or null when the
+  /// engine reported no vertices for that code.
+  static ScannedCode _parseCode(Object? entry) {
+    if (entry is Map) {
+      final text = entry['text'];
+      if (text is String) {
+        final x = entry['x'];
+        final y = entry['y'];
+        final center = (x is num && y is num)
+            ? Offset(x.toDouble(), y.toDouble())
+            : null;
+        return ScannedCode(text: text, center: center);
+      }
+    }
+    // A bare string is still a usable payload; losing the position is better
+    // than losing the result.
+    if (entry is String) {
+      return ScannedCode(text: entry);
+    }
+    throw const WeChatQrCodeException(
+      WeChatQrCodeError.decodeFailed,
+      'A scan result entry was neither a map nor a string.',
+    );
   }
 
   @override

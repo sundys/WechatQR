@@ -59,6 +59,25 @@ Three distinct camera states, because collapsing them causes visible bugs:
 `ScanController` also applies a short-window `ScanDedup` on top, so a code still in frame after the
 sheet closes does not immediately re-open it.
 
+## Choosing between several codes
+
+The engine can return more than one code per frame. Rather than guessing which one the user meant,
+the view marks every code with a green indicator, pauses analysis (keeping the preview live) and
+waits three seconds:
+
+```
+several codes detected
+        │
+        ├── marker tapped  ──▶ that code alone becomes the result
+        │
+        └── 3s elapse      ──▶ every result is shown, as before
+```
+
+The markers are drawn in Flutter from normalised centres reported by the platform, so the indicator
+and the tap that selects it live in the same layer and share one timer. `ViewfinderView` draws the
+frame and the animated scan line; it draws no result points, precisely so there is only one place
+that decides what a tap on a marker means. The window length is injectable for tests.
+
 ## Threading and cost control
 
 * Detector construction and image decoding run off the UI thread on both platforms.

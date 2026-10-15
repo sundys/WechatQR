@@ -35,9 +35,14 @@ which is exactly the case the release workflow refuses to publish.
 Three tabs, with the scan tab as the launch destination.
 
 **扫描 (Scan)** — full-bleed live camera preview that starts as soon as camera permission is
-available. Decoded results appear in a scrollable, non-fullscreen sheet with copy and (for validated
-`http`/`https` URLs) open-in-browser actions. Bottom-left **历史** opens the history sheet;
-bottom-right **相册** picks one picture and decodes it. A torch toggle sits top-right.
+available, with the reference project's viewfinder frame and animated scan line. Each detected code
+is marked with a green indicator. Decoded results appear in a scrollable, non-fullscreen sheet with
+copy and (for validated `http`/`https` URLs) open-in-browser actions. Bottom-left **历史** opens the
+history sheet; bottom-right **相册** picks one picture and decodes it. A torch toggle sits top-right.
+
+When several codes are in one frame the app does not guess: it marks them all and waits **3 seconds**
+for a tap on one of the markers. Tapping shows that code alone; letting the window elapse shows every
+result.
 
 **生成 (Generate)** — multi-line input with 粘贴 / 生成 / 清空, renders a QR code, and offers
 save-to-gallery and share.

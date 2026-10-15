@@ -263,6 +263,45 @@ class _ScanPageState extends State<ScanPage> {
       children: [
         scan.buildScannerView(),
 
+        // Result indicators. Drawn in Flutter rather than by the native
+        // viewfinder so the tap and the selection window live in the same
+        // layer, and so they survive the result sheet opening over the preview.
+        if (scan.markedCodes.any((code) => code.center != null))
+          Positioned.fill(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final codes = scan.markedCodes;
+                return Stack(
+                  children: [
+                    for (var index = 0; index < codes.length; index++)
+                      if (codes[index].center != null)
+                        Positioned(
+                          left:
+                              codes[index].center!.dx * constraints.maxWidth -
+                              _CodeMarker.size / 2,
+                          top:
+                              codes[index].center!.dy * constraints.maxHeight -
+                              _CodeMarker.size / 2,
+                          child: _CodeMarker(
+                            index: index + 1,
+                            interactive: scan.isAwaitingSelection,
+                            onTap: () => unawaited(scan.selectMarked(index)),
+                          ),
+                        ),
+                  ],
+                );
+              },
+            ),
+          ),
+
+        if (scan.isAwaitingSelection)
+          Positioned(
+            left: 24,
+            right: 24,
+            top: 16,
+            child: _SelectionHint(count: scan.markedCodes.length),
+          ),
+
         // Keeps the torch reachable above the system gesture area.
         Positioned(
           top: 8,
@@ -525,6 +564,105 @@ class _CenteredPanel extends StatelessWidget {
               runSpacing: 8,
               alignment: WrapAlignment.center,
               children: actions,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A green marker over a detected QR code.
+///
+/// Sized generously: while the selection window is open the whole circle is a
+/// tap target, which is easier to hit on a moving preview than the few pixels
+/// the code actually occupies.
+class _CodeMarker extends StatelessWidget {
+  const _CodeMarker({
+    required this.index,
+    required this.interactive,
+    required this.onTap,
+  });
+
+  /// Touch target edge length. Comfortably above the 48dp minimum.
+  static const double size = 56;
+
+  final int index;
+  final bool interactive;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    // The reference project marks results with a green dot; the theme seed is
+    // that same green, so the marker stays consistent in both themes.
+    const markerColor = Color(0xFF07C160);
+
+    return Semantics(
+      button: interactive,
+      label: interactive ? '选择第 $index 个二维码' : '已识别二维码 $index',
+      child: GestureDetector(
+        onTap: interactive ? onTap : null,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Center(
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: markerColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 3),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x55000000), blurRadius: 6),
+                ],
+              ),
+              child: interactive
+                  ? Center(
+                      child: Text(
+                        '$index',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    )
+                  : null,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tells the user that several codes were found and one can be chosen.
+class _SelectionHint extends StatelessWidget {
+  const _SelectionHint({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface.withValues(alpha: 0.85),
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.touch_app, size: 18, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '识别到 $count 个二维码，点击绿点选择其中一个，'
+                '3 秒后显示全部结果',
+                style: theme.textTheme.bodySmall,
+              ),
             ),
           ],
         ),

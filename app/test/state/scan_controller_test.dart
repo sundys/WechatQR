@@ -109,14 +109,128 @@ void main() {
       expect(platform.pauseCount, 1);
     });
 
-    test('multi-code frames keep every result', () async {
+    test(
+      'a multi-code frame marks every code without deciding for the user',
+      () async {
+        await ready();
+        await controller.startScanning();
+        platform.emitCodes(const [
+          ScannedCode(text: 'first', center: Offset(0.25, 0.40)),
+          ScannedCode(text: 'second', center: Offset(0.75, 0.60)),
+        ]);
+        await pumpEventQueue();
+
+        // No result yet: the user is being asked which code they meant.
+        expect(controller.result, isNull);
+        expect(controller.isAwaitingSelection, isTrue);
+        expect(controller.markedCodes.map((c) => c.text), ['first', 'second']);
+        expect(controller.markedCodes.first.center, const Offset(0.25, 0.40));
+        // The preview keeps running, but frames stop being decoded so the marks
+        // cannot move out from under the indicators.
+        expect(platform.pauseCount, 1);
+      },
+    );
+
+    test('choosing a marked code presents only that code', () async {
       await ready();
       await controller.startScanning();
-      platform.emit(['first', 'second']);
+      platform.emitCodes(const [
+        ScannedCode(text: 'first', center: Offset(0.25, 0.40)),
+        ScannedCode(text: 'second', center: Offset(0.75, 0.60)),
+      ]);
       await pumpEventQueue();
 
+      await controller.selectMarked(1);
+
+      expect(controller.isAwaitingSelection, isFalse);
+      expect(controller.result?.primary, 'second');
+      // Only the chosen payload is treated as the result, so the copy and
+      // history side effects apply to it alone.
+      expect(controller.result?.isMulti, isFalse);
+      expect(clipboard.text, 'second');
+      expect(history.entries.single.content, 'second');
+    });
+
+    test('the selection window elapsing shows every code', () async {
+      // A short window keeps the test fast; the production value is 3 seconds.
+      controller.dispose();
+      controller = ScanController(
+        engine: WeChatQrCode(platform: platform),
+        settings: settings,
+        history: history,
+        platformServices: services,
+        clipboard: clipboard,
+        linkOpener: opener,
+        clock: () => now,
+        selectionWindow: const Duration(milliseconds: 30),
+      );
+
+      await ready();
+      await controller.startScanning();
+      platform.emitCodes(const [
+        ScannedCode(text: 'first', center: Offset(0.25, 0.40)),
+        ScannedCode(text: 'second', center: Offset(0.75, 0.60)),
+      ]);
+      await pumpEventQueue();
+
+      expect(controller.result, isNull);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(controller.isAwaitingSelection, isFalse);
       expect(controller.result?.isMulti, isTrue);
       expect(controller.result?.all, ['first', 'second']);
+    });
+
+    test('a frame arriving during the selection window is ignored', () async {
+      await ready();
+      await controller.startScanning();
+      platform.emitCodes(const [
+        ScannedCode(text: 'first', center: Offset(0.25, 0.40)),
+        ScannedCode(text: 'second', center: Offset(0.75, 0.60)),
+      ]);
+      await pumpEventQueue();
+
+      platform.emitCodes(const [
+        ScannedCode(text: 'third', center: Offset(0.10, 0.10)),
+      ]);
+      await pumpEventQueue();
+
+      expect(controller.markedCodes.map((c) => c.text), ['first', 'second']);
+      expect(controller.result, isNull);
+    });
+
+    test('closing the result clears the markers', () async {
+      await ready();
+      await controller.startScanning();
+      platform.emit(['hello']);
+      await pumpEventQueue();
+      expect(controller.markedCodes, isNotEmpty);
+
+      await controller.closeResult();
+
+      expect(controller.markedCodes, isEmpty);
+      expect(controller.isAwaitingSelection, isFalse);
+    });
+
+    test('a single code is still presented without waiting', () async {
+      await ready();
+      await controller.startScanning();
+      platform.emitCodes(const [
+        ScannedCode(text: 'only', center: Offset(0.5, 0.5)),
+      ]);
+      await pumpEventQueue();
+
+      expect(controller.isAwaitingSelection, isFalse);
+      expect(controller.result?.primary, 'only');
+    });
+
+    test('selectMarked is a no-op when nothing is being chosen', () async {
+      await ready();
+      await controller.startScanning();
+
+      await controller.selectMarked(0);
+
+      expect(controller.result, isNull);
     });
 
     test('the same code is not re-presented while the sheet is open', () async {

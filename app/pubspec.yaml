@@ -13,6 +13,12 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Built-in widget strings (text selection menus, text field long-press
+  # menus, date pickers) come from these delegates. Without them Flutter falls
+  # back to English even though every string this app writes is Chinese.
+  flutter_localizations:
+    sdk: flutter
+
   # Local plugin wrapping the native WeChatQRCode engine (vendored from
   # jenly1314/WeChatQRCode, Apache-2.0). See docs/decisions/.
   wechat_qrcode:

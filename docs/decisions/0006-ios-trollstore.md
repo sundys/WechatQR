@@ -89,7 +89,12 @@ Nothing below has been checked:
    `videoRotationAngle` is used when available; the deployment target is compiled at 13.0 with a
    fallback, but older versions are not otherwise validated.
 6. **Photo library saving and vibration** on a real device.
-7. **The open-source licence screen** renders the registered attribution correctly.
+7. **Result indicators.** `WeChatQRCodeEngine` collects the quads its detector
+   returns but does not surface them, so the iOS event payload carries null
+   coordinates and no markers are drawn. Making it report them needs the same
+   `resizeAspectFill` mapping the Android view does, plus a device to confirm it;
+   see ADR-0007 for the Android implementation it would mirror.
+8. **The open-source licence screen** renders the registered attribution correctly.
 
 ## Minimum supported iOS version
 

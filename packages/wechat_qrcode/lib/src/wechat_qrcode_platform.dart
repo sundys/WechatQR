@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'method_channel_wechat_qrcode.dart';
+import 'scanned_code.dart';
 
 /// Contract every platform implementation of the WeChatQRCode engine must
 /// satisfy.
@@ -63,9 +64,12 @@ abstract class WeChatQrCodePlatform extends PlatformInterface {
 
   /// Emits one event per frame that produced at least one decoded payload.
   ///
+  /// Each entry carries the payload and, when the engine reported it, where the
+  /// code was in the preview so the UI can mark it.
+  ///
   /// The platform suppresses frames while it is already analysing one, and the
   /// Dart side applies its own short-window de-duplication on top.
-  Stream<List<String>> scanResults();
+  Stream<List<ScannedCode>> scanResults();
 
   /// Turns the torch on or off. Silently ignored where unsupported.
   Future<void> setTorch(bool enabled);

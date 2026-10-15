@@ -59,6 +59,13 @@ abstract final class ThirdPartyNotices {
       purpose: '相机帧分析接口（Analyzer）与 NV21 转换工具',
     ),
     ThirdPartyComponent(
+      name: 'ViewfinderView',
+      version: '1.4.0',
+      license: 'Apache-2.0',
+      copyright: 'Copyright (C) Jenly Yu (jenly1314)',
+      purpose: '扫码取景框与上下滚动的扫描线动画',
+    ),
+    ThirdPartyComponent(
       name: 'LogX',
       version: '1.3.0',
       license: 'Apache-2.0',

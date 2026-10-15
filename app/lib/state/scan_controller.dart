@@ -27,6 +27,7 @@ class ScanController extends ChangeNotifier {
     required this._clipboard,
     required this._linkOpener,
     DateTime Function()? clock,
+    this._selectionWindow = const Duration(seconds: 3),
   }) : _clock = clock ?? DateTime.now;
 
   final WeChatQrCode _engine;
@@ -37,11 +38,15 @@ class ScanController extends ChangeNotifier {
   final LinkOpener _linkOpener;
   final DateTime Function() _clock;
 
+  /// How long a multi-code frame waits for the user to pick one before every
+  /// result is shown. Injectable so tests do not have to wait three seconds.
+  final Duration _selectionWindow;
+
   final ScanDedup _dedup = ScanDedup();
   final StreamController<String> _messages =
       StreamController<String>.broadcast();
 
-  StreamSubscription<List<String>>? _subscription;
+  StreamSubscription<List<ScannedCode>>? _subscription;
 
   /// Short user-facing notices (copied, clipboard empty, link could not open).
   Stream<String> get messages => _messages.stream;
@@ -69,6 +74,19 @@ class ScanController extends ChangeNotifier {
 
   ScanSource _resultSource = ScanSource.camera;
   ScanSource get resultSource => _resultSource;
+
+  /// Codes currently marked in the preview. Populated while the user is
+  /// choosing between several codes and kept while a result is on screen, so
+  /// the indicators stay put behind the sheet.
+  List<ScannedCode> _marked = const <ScannedCode>[];
+  List<ScannedCode> get markedCodes => _marked;
+
+  bool _awaitingSelection = false;
+
+  /// `true` while a multi-code frame is waiting for the user to pick one.
+  bool get isAwaitingSelection => _awaitingSelection;
+
+  Timer? _selectionTimer;
 
   bool _resultCopied = false;
   bool get resultCopied => _resultCopied;
@@ -191,23 +209,106 @@ class ScanController extends ChangeNotifier {
     _emit('已复制');
   }
 
-  void _onFrameResults(List<String> texts) {
-    final selection = ScanResultPolicy.select(texts);
-    if (selection == null) {
+  void _onFrameResults(List<ScannedCode> codes) {
+    final usable = codes
+        .where((code) => code.text.trim().isNotEmpty)
+        .toList(growable: false);
+    if (usable.isEmpty) {
       return;
     }
-    if (_result != null) {
-      // A sheet is already open; ignore further frames rather than swapping the
-      // content under the user.
+    if (_result != null || _awaitingSelection) {
+      // Something is already on screen; ignore further frames rather than
+      // swapping the content under the user.
       return;
     }
 
     final now = _clock();
-    if (!_dedup.shouldEmit(selection.primary, now)) {
+    if (!_dedup.shouldEmit(usable.first.text, now)) {
       return;
     }
 
-    unawaited(_handleSelection(selection, ScanSource.camera, now));
+    if (usable.length == 1) {
+      final selection = ScanResultPolicy.select([usable.first.text]);
+      if (selection != null) {
+        unawaited(
+          _handleSelection(selection, ScanSource.camera, now, marked: usable),
+        );
+      }
+      return;
+    }
+
+    // Several codes in one frame: mark them all and give the user a moment to
+    // pick one, instead of assuming. Choosing nothing shows every result.
+    _beginSelection(usable);
+  }
+
+  /// Marks every code in a multi-code frame and starts the selection window.
+  void _beginSelection(List<ScannedCode> codes) {
+    _awaitingSelection = true;
+    _marked = codes;
+    notifyListeners();
+
+    // Freeze the frame while the user decides, so the codes do not move out
+    // from under the indicators. The preview stays live.
+    unawaited(pauseScanning());
+
+    _selectionTimer?.cancel();
+    _selectionTimer = Timer(_selectionWindow, () {
+      _selectionTimer = null;
+      unawaited(_showAllMarked());
+    });
+  }
+
+  /// Called when the selection window elapses: show every marked code.
+  Future<void> _showAllMarked() async {
+    if (!_awaitingSelection) {
+      return;
+    }
+    _awaitingSelection = false;
+
+    final codes = _marked;
+    final selection = ScanResultPolicy.select(
+      codes.map((code) => code.text).toList(growable: false),
+    );
+    if (selection == null) {
+      _marked = const <ScannedCode>[];
+      notifyListeners();
+      return;
+    }
+    await _handleSelection(
+      selection,
+      ScanSource.camera,
+      _clock(),
+      marked: codes,
+    );
+  }
+
+  /// Called when the user taps the indicator for the code at [index].
+  Future<void> selectMarked(int index) async {
+    if (!_awaitingSelection) {
+      return;
+    }
+    final codes = _marked;
+    if (index < 0 || index >= codes.length) {
+      return;
+    }
+
+    _selectionTimer?.cancel();
+    _selectionTimer = null;
+    _awaitingSelection = false;
+
+    // Presenting only the chosen code also means the enabled side effects —
+    // copy, history, auto-open — apply to it alone.
+    final selection = ScanResultPolicy.select([codes[index].text]);
+    if (selection == null) {
+      return;
+    }
+    await _handleSelection(
+      selection,
+      ScanSource.camera,
+      _clock(),
+      marked: codes,
+    );
   }
 
   void _onEngineStreamError(Object error) {
@@ -225,8 +326,9 @@ class ScanController extends ChangeNotifier {
   Future<void> _handleSelection(
     ScanResultSelection selection,
     ScanSource source,
-    DateTime at,
-  ) async {
+    DateTime at, {
+    List<ScannedCode> marked = const <ScannedCode>[],
+  }) async {
     if (source == ScanSource.camera) {
       // Pause the recognition loop so the sheet cannot be replaced or re-shown
       // while it is on screen (project spec §6.1).
@@ -235,6 +337,7 @@ class ScanController extends ChangeNotifier {
 
     _result = selection;
     _resultSource = source;
+    _marked = marked;
     _resultCopied = false;
     _resultLinkFailed = false;
     notifyListeners();
@@ -292,7 +395,11 @@ class ScanController extends ChangeNotifier {
     // Without this, a code still in frame would pop the sheet straight back up.
     _dedup.suppress(current.primary, _clock());
 
+    _selectionTimer?.cancel();
+    _selectionTimer = null;
+    _awaitingSelection = false;
     _result = null;
+    _marked = const <ScannedCode>[];
     _resultCopied = false;
     _resultLinkFailed = false;
     notifyListeners();
@@ -336,6 +443,7 @@ class ScanController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _selectionTimer?.cancel();
     _subscription?.cancel();
     _messages.close();
     super.dispose();

@@ -139,11 +139,16 @@ class FakeWeChatQrCodePlatform extends WeChatQrCodePlatform {
   int resumeCount = 0;
   bool? lastTorch;
 
-  final StreamController<List<String>> _results =
-      StreamController<List<String>>.broadcast();
+  final StreamController<List<ScannedCode>> _results =
+      StreamController<List<ScannedCode>>.broadcast();
 
-  /// Pushes a decoded frame as the native side would.
-  void emit(List<String> texts) => _results.add(texts);
+  /// Pushes a decoded frame with no locations, as a platform that does not
+  /// report vertices would.
+  void emit(List<String> texts) =>
+      emitCodes(texts.map((text) => ScannedCode(text: text)).toList());
+
+  /// Pushes a decoded frame with marker positions.
+  void emitCodes(List<ScannedCode> codes) => _results.add(codes);
 
   /// Pushes an error through the results stream.
   void emitError(Object error) => _results.addError(error);
@@ -194,7 +199,7 @@ class FakeWeChatQrCodePlatform extends WeChatQrCodePlatform {
   Future<void> release() async {}
 
   @override
-  Stream<List<String>> scanResults() => _results.stream;
+  Stream<List<ScannedCode>> scanResults() => _results.stream;
 
   @override
   Widget buildScannerView({Key? key}) => const SizedBox.shrink();

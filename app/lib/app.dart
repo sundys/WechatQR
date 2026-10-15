@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:platform_services/platform_services.dart';
 
 import 'config/app_config.dart';
@@ -90,6 +91,17 @@ class WeChatQrApp extends StatelessWidget {
           return MaterialApp(
             title: AppConfig.appName,
             debugShowCheckedModeBanner: false,
+            // The interface is Chinese-only, so the built-in widget strings are
+            // pinned to Chinese too. Leaving this to the device locale produced
+            // English long-press menus ("Copy", "Select all", "Paste") next to
+            // Chinese screens.
+            locale: const Locale('zh'),
+            supportedLocales: const [Locale('zh'), Locale('en')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
             themeMode: settings.settings.themeMode.toFlutterThemeMode(),
             theme: AppTheme.light(),
             darkTheme: AppTheme.dark(),
