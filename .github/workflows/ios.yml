@@ -66,15 +66,14 @@ jobs:
           channel: stable
           cache: true
 
-      # Building OpenCV for iOS takes tens of minutes, so the result is cached
-      # and only rebuilt when OPENCV_VERSION changes. The `-v2` suffix
-      # invalidates any entry saved by an earlier build configuration.
-      - name: Cache the OpenCV xcframework
+      # Building OpenCV for iOS takes about twenty minutes, so the result is
+      # cached and only rebuilt when OPENCV_VERSION changes.
+      - name: Restore the OpenCV xcframework
         id: opencv-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v5
         with:
           path: packages/wechat_qrcode/ios/opencv2.xcframework
-          key: opencv-ios-${{ env.OPENCV_VERSION }}-${{ runner.arch }}-v3
+          key: opencv-ios-${{ env.OPENCV_VERSION }}-${{ runner.arch }}-v4
 
       - name: Build the OpenCV xcframework
         if: steps.opencv-cache.outputs.cache-hit != 'true'
@@ -85,6 +84,21 @@ jobs:
         # fail on a missing executable bit. The bit is set in the index too, but
         # this costs nothing and removes the class of failure entirely.
         run: bash scripts/build_opencv_ios.sh
+
+      # Saved explicitly, as soon as the framework exists, instead of relying on
+      # the restore step's post action. actions/cache does not write its entry
+      # when the job fails, so a failure later in this job — in the app build,
+      # say — would discard twenty minutes of OpenCV compilation and make the
+      # next attempt pay for it again.
+      #
+      # No `always()`: if the build step failed there is nothing worth caching,
+      # and this way a broken framework can never enter the cache.
+      - name: Save the OpenCV xcframework
+        if: steps.opencv-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: packages/wechat_qrcode/ios/opencv2.xcframework
+          key: opencv-ios-${{ env.OPENCV_VERSION }}-${{ runner.arch }}-v4
 
       - name: Confirm the framework is present
         run: |

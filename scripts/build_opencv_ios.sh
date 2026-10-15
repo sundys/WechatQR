@@ -358,7 +358,7 @@ cp -R "$PRODUCED" "$OUTPUT_DIR/opencv2.xcframework"
 
 echo
 echo "Done: $OUTPUT_DIR/opencv2.xcframework"
-echo "      binary: $BINARY"
+echo "      device binary: ${DEVICE_BINARY:-<not found>}"
 echo
 echo "Next: cd app && flutter build ios --release --no-codesign"
 echo "      then install the resulting .ipa with TrollStore."
