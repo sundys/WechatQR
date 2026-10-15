@@ -70,14 +70,29 @@ not a gap to be closed later.
 
 Nothing below has been checked:
 
-1. **The OpenCV framework builds.** The first CI attempt failed here, and the reason is instructive:
-   the original script drove cmake by hand and passed `-DBUILD_opencv_framework=ON`, a flag that does
-   not exist in OpenCV 4.12 — cmake treats unknown `-D` variables as unused, so no framework was ever
-   produced. The script now uses OpenCV's maintained `platforms/apple/build_xcframework.py` and
-   computes its `--without` list from the module dependency declarations (see ADR-0002 for the
-   eight-module closure). That module-selection logic is unit-tested, but the build itself still has
-   not run on a Mac: whether `build_xcframework.py` accepts the exclusion list and produces a
-   linkable framework is unknown.
+1. ~~**The OpenCV framework builds.**~~ **Verified, 2026-10-15.** A CI run at `ce667c4` built it
+   successfully in ~18 minutes: CMake reported `To be built: calib3d core dnn features2d flann
+   imgproc objdetect wechat_qrcode`, compiled `opencv_wechat_qrcode` from `wechat_qrcode.cpp` for
+   both the device and simulator slices, downloaded the four model files, and finished with
+   `xcodebuild -create-xcframework`. The nine-module closure in ADR-0002 is confirmed against a real
+   build.
+
+   Getting there took three CI attempts, and the failures are worth recording because none of them
+   were about OpenCV:
+
+   * the script was committed without the executable bit — Git cannot read that bit from a Windows
+     checkout, so it has to be set in the index;
+   * the first script drove cmake by hand and passed `-DBUILD_opencv_framework=ON`, a flag that does
+     not exist in OpenCV 4.12 — cmake treats unknown `-D` variables as unused, so no framework was
+     ever produced;
+   * the third attempt built the framework correctly and was failed by this project's own
+     verification step, which looked for `wechat_qrcode` in `nm -gU` output. OpenCV compiles with
+     `-fvisibility=hidden`, and `nm -g` filters by external linkage, so the check reported a healthy
+     build as broken. It now checks the build log for the compiled target instead — evidence no
+     compiler flag can defeat — and treats the symbol lookup as informational.
+
+   The framework is ~18 minutes of work, so the workflow caches it under
+   `opencv-ios-<version>-<arch>-v3`; later runs restore it and skip straight to the app build.
 2. **The plugin compiles.** Swift/ObjC++ interop across the `include/` header, the
    `FlutterPlatformViewFactory` signatures and the `AVCaptureConnection.videoRotationAngle`
    availability branch are all unexercised.

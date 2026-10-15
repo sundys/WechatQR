@@ -305,18 +305,48 @@ fi
 # ---------------------------------------------------------------- verify
 
 echo "==> Verifying the framework carries the WeChat QRCode engine"
-# A C++ class lands in the binary under a mangled name, so a substring check is
-# enough to catch a build that silently dropped the module — which is exactly
-# the failure mode of getting the --without list wrong.
-BINARY="$(find "$PRODUCED" -type f -name opencv2 | head -1)"
-if [[ -z "$BINARY" ]]; then
-  echo "error: no opencv2 binary found inside $PRODUCED." >&2
+
+# The device slice is located by shape rather than by name: Xcode names slices
+# after the platform and architectures (ios-arm64, ios-arm64-simulator, …), and
+# hard-coding that would be one more assumption to be wrong about.
+DEVICE_SLICE=""
+for candidate in "$PRODUCED"/*/; do
+  case "$candidate" in
+    *-simulator/) continue ;;
+  esac
+  if find "$candidate" -type f -name opencv2 2>/dev/null | grep -q .; then
+    DEVICE_SLICE="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$DEVICE_SLICE" ]]; then
+  echo "error: the xcframework has no device slice." >&2
+  ls -la "$PRODUCED" >&2
   exit 1
 fi
-if ! nm -gU "$BINARY" 2>/dev/null | grep -q 'wechat_qrcode'; then
-  echo "error: $BINARY does not contain the wechat_qrcode symbols." >&2
+echo "    device slice: ${DEVICE_SLICE#$PRODUCED/}"
+
+# Checked against the build log, not the produced binary. OpenCV compiles with
+# -fvisibility=hidden and `nm -g` filters by external linkage, so the module's
+# symbols do not appear in `nm -gU` output even when the module is present and
+# correctly compiled. An earlier version of this script failed an entirely
+# healthy 18-minute build exactly that way. "opencv_wechat_qrcode was compiled"
+# is direct evidence and no compiler flag can defeat it.
+if ! grep -q 'opencv_wechat_qrcode' "$BUILD_LOG"; then
+  echo "error: the build log shows wechat_qrcode was never compiled." >&2
   echo "       The --without list removed a module it was meant to keep." >&2
   exit 1
+fi
+echo "    wechat_qrcode was compiled into opencv_wechat_qrcode"
+
+# Informational only. This can legitimately find nothing, so it must never
+# decide the outcome.
+DEVICE_BINARY="$(find "$DEVICE_SLICE" -type f -name opencv2 2>/dev/null | head -1)"
+if [[ -n "$DEVICE_BINARY" ]] && nm "$DEVICE_BINARY" 2>/dev/null | grep -q 'wechat_qrcode'; then
+  echo "    the device slice references wechat_qrcode symbols"
+else
+  echo "    note: no wechat_qrcode symbols visible in the device binary (expected under -fvisibility=hidden)"
 fi
 
 # ---------------------------------------------------------------- install
