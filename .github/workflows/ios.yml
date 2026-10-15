@@ -38,6 +38,26 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Checked here, in the cheap job, rather than at the end of the macOS one.
+      # A bad tag would otherwise surface only after the OpenCV framework and the
+      # whole app had been built: minutes of runner time lost to a typo in the
+      # input, with nothing published at the end of it either way.
+      - name: Validate the release tag input
+        if: inputs.attach_to_release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='${{ inputs.attach_to_release }}'
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+$'; then
+            echo "::error::attach_to_release must be a release tag such as v1.0.2, but was '$tag'. Leave it empty to build and verify the .ipa without publishing it."
+            exit 1
+          fi
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::No release named '$tag' exists. Push the matching tag first, or leave attach_to_release empty."
+            exit 1
+          fi
+          echo "The .ipa will be attached to release $tag."
       - name: Read the version from pubspec.yaml
         id: read
         run: |
@@ -152,7 +172,7 @@ jobs:
           set -euo pipefail
           tag='${{ inputs.attach_to_release }}'
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null \
-            || { echo "::error::No release named '$tag' exists. Create it by pushing the matching tag, or leave the input empty to only upload an artifact."; exit 1; }
+            || { echo "::error::No release named '$tag' exists. Push the matching tag first, or leave attach_to_release empty to build without publishing."; exit 1; }
           gh release upload "$tag" wechatqr-*.ipa \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
