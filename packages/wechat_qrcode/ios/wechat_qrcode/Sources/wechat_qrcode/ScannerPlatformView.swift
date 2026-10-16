@@ -344,7 +344,25 @@ extension ScannerPlatformView: AVCaptureVideoDataOutputSampleBufferDelegate {
         // Taken from the preview rather than from this frame's connection: the
         // markers have to match what is on screen, not what the output happens to
         // report.
-        let degrees = displayRotationDegrees()
+        let displayDegrees = displayRotationDegrees()
+
+        // ...but only rotate if the buffer is not upright already.
+        //
+        // The connection reports the orientation the preview is displayed at,
+        // while whether the buffers arrive already turned for it depends on the
+        // platform: on iOS 14 and 15 they do. The engine was rotating them a
+        // second time, so the analysed image sat a quarter turn from the picture,
+        // and every marker came out rotated with it — reported on an iPhone SE
+        // (1st gen) and a 6s, where the codes formed a triangle pointing down and
+        // the markers formed the same triangle pointing left.
+        //
+        // Rather than pick a side, the buffer's own shape settles it: an upright
+        // buffer for an upright display needs no further rotation, and a sideways
+        // one does.
+        let wantsPortrait = displayDegrees == 90 || displayDegrees == 270
+        let bufferIsSideways =
+            CVPixelBufferGetWidth(pixelBuffer) > CVPixelBufferGetHeight(pixelBuffer)
+        let rotation = (wantsPortrait && bufferIsSideways) ? displayDegrees : 0
 
         // Objective-C declares this as
         // `detectAndDecodePixelBuffer:rotationDegrees:`, but Swift drops
@@ -353,14 +371,14 @@ extension ScannerPlatformView: AVCaptureVideoDataOutputSampleBufferDelegate {
         // unlabelled.
         let matches = WeChatQRCodeEngine.detectAndDecode(
             pixelBuffer,
-            rotationDegrees: Int32(degrees))
+            rotationDegrees: Int32(rotation))
 
         guard !matches.isEmpty else { return }
 
-        // The engine reports centres in the coordinates of the image it analysed,
-        // which is the sensor image rotated upright. The preview shows the same
-        // rotation, so the same image size is what the mapping needs.
-        let imageSize = rotatedImageSize(of: pixelBuffer, degrees: degrees)
+        // The engine reports centres in the coordinates of the image it analysed.
+        // Passing the rotation actually applied — not the display's — keeps the
+        // size used here and the image the centres were measured in the same one.
+        let imageSize = rotatedImageSize(of: pixelBuffer, degrees: rotation)
 
         let payload: [[String: Any?]] = matches.map { match in
             var x: Double?

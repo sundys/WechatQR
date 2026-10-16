@@ -70,6 +70,32 @@ hop onto the session queue already captures `self` weakly.
 The same round also assumed `UIKit` would make `CIImage` visible. It now imports `CoreImage`
 explicitly rather than relying on transitive visibility.
 
+## The markers were a quarter turn out, and the report said so exactly
+
+The second report was the decisive one: with three codes arranged as a triangle pointing **down** —
+two above, one below — the markers formed the same triangle pointing **left**. Three points are
+enough to identify a rotation, and the arithmetic confirms it:
+
+| Code, as displayed | Marker, as displayed | A quarter turn clockwise |
+|---|---|---|
+| (0.30, 0.30) top-left | (0.70, 0.30) top-right | ✓ |
+| (0.70, 0.30) top-right | (0.70, 0.70) bottom-right | ✓ |
+| (0.50, 0.75) bottom-centre | (0.25, 0.50) mid-left | ✓ |
+
+So the marker coordinates were the displayed ones rotated a quarter turn clockwise, which means the
+**analysed image** sat a quarter turn from the picture. Since the engine rotated by 90°, the buffer it
+was given must already have been upright: `AVCaptureVideoDataOutput` applies the connection's
+orientation to its buffers, and the engine was turning them a second time.
+
+That is why an iPhone SE (1st gen) and a 6s showed it: they take the `videoOrientation` path. It also
+explains why decoding kept working — a QR symbol decodes at any rotation, so detection succeeded and
+only the coordinates were in the wrong frame.
+
+**The fix does not pick a side.** Whether a platform's buffers arrive pre-rotated is not something to
+assume in either direction, so the buffer's own shape decides: an upright buffer for an upright
+display needs no further rotation, and a sideways one does. The size used to normalise the centres is
+computed from the rotation actually applied, so the two cannot disagree.
+
 ## Markers were rotated on older iPhones
 
 Reported as markers not sitting on the codes on an iPhone SE (1st gen) and a 6s — devices old enough
