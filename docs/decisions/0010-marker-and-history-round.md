@@ -70,6 +70,23 @@ hop onto the session queue already captures `self` weakly.
 The same round also assumed `UIKit` would make `CIImage` visible. It now imports `CoreImage`
 explicitly rather than relying on transitive visibility.
 
+## Markers were rotated on older iPhones
+
+Reported as markers not sitting on the codes on an iPhone SE (1st gen) and a 6s — devices old enough
+to run iOS 14/15, and therefore to take the `videoOrientation` path rather than `videoRotationAngle`.
+Android was unaffected, which is consistent: CameraX manages preview and analysis orientation as one
+concern.
+
+The cause was structural. A capture session has **two** connections — the preview layer's and the
+data output's — and nothing keeps them in step. Only the output's was oriented; the preview layer was
+left at its own default. If they disagree, the analysis frame is turned differently from what is on
+screen, and every marker derived from it lands rotated.
+
+Both are now oriented through one function, called while configuring and again on each start, because
+the preview layer only produces a connection once the session has an input. The analysis is then
+rotated by **the preview's** orientation rather than the output's, so the frame the markers are
+computed from matches what the user sees by construction, whatever either connection reports.
+
 ## Not verified
 
 * Nothing here was exercised on a device. Freezing, marker placement on both platforms, and the

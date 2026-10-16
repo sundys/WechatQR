@@ -117,6 +117,8 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
     }
 
     private func beginRunning(attempt: Int) {
+        alignOrientations()
+
         if !session.isRunning {
             session.startRunning()
         }
@@ -246,9 +248,7 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
         videoOutput = output
 
         // Keep the connection upright so the preview matches the device.
-        if let connection = output.connection(with: .video) {
-            applyPortraitOrientation(to: connection)
-        }
+        alignOrientations()
 
         isConfigured = true
         return true
@@ -264,6 +264,37 @@ final class ScannerPlatformView: NSObject, FlutterPlatformView {
             .compactMap { $0 as? AVCaptureDeviceInput }
             .first?
             .device
+    }
+
+    /// Puts the preview layer and the analysed buffers in the same orientation.
+    ///
+    /// They are two independent connections, and nothing keeps them in step: the
+    /// preview layer has its own `videoOrientation` and the data output has
+    /// another. Only the output's was ever set, which left the preview free to
+    /// sit at its own default. Markers computed from the analysis frame then
+    /// land rotated on the preview — which is what was reported on iPhone SE and
+    /// 6s, the devices old enough to take the `videoOrientation` path rather than
+    /// `videoRotationAngle`.
+    ///
+    /// Called while configuring and again on every start, because the preview
+    /// layer only produces a connection once the session has an input.
+    private func alignOrientations() {
+        let connections = [previewLayer.connection, videoOutput?.connection(with: .video)]
+        for connection in connections.compactMap({ $0 }) {
+            applyPortraitOrientation(to: connection)
+        }
+    }
+
+    /// The rotation the preview is being displayed at.
+    ///
+    /// The analysis is turned by this rather than by the data output's own
+    /// orientation, so the two agree by construction: whatever the preview does,
+    /// the frame the markers are computed from has been rotated to match it.
+    private func displayRotationDegrees() -> Int {
+        guard let connection = previewLayer.connection else {
+            return 0
+        }
+        return rotationDegrees(for: connection)
     }
 
     private func applyPortraitOrientation(to connection: AVCaptureConnection) {
@@ -310,7 +341,10 @@ extension ScannerPlatformView: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-        let degrees = rotationDegrees(for: connection)
+        // Taken from the preview rather than from this frame's connection: the
+        // markers have to match what is on screen, not what the output happens to
+        // report.
+        let degrees = displayRotationDegrees()
 
         // Objective-C declares this as
         // `detectAndDecodePixelBuffer:rotationDegrees:`, but Swift drops
